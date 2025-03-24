@@ -172,3 +172,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Keep /data/ dir empty
+/data/*
+!/data/.gitkeep
+
+/VisualBERT/models/*
+!/VisualBERT/models/.gitkeep
