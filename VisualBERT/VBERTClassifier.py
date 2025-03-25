@@ -11,9 +11,8 @@ class VBERTClassifier(nn.Module):
             "uclanlp/visualbert-vqa-coco-pre"
         )
 
-        # Get hidden size from VisualBERT (typically 768)
+        # Get hidden size from VisualBERT
         hidden_size = self.visual_bert.config.hidden_size
-        print(hidden_size)
 
         # Learnable projection layer
         self.visual_projection = nn.Linear(raw_feature_dim, 2048)
@@ -26,20 +25,10 @@ class VBERTClassifier(nn.Module):
         )
 
     def forward(self, input_ids, attention_mask, visual_embeds):
-        """
-        Args:
-            input_ids (Tensor): Tokenized text input of shape (batch_size, seq_len).
-            attention_mask (Tensor): Attention mask for text tokens of shape (batch_size, seq_len).
-            visual_embeds (Tensor): Precomputed raw ROI visual features of shape
-                                    (batch_size, max_regions, raw_feature_dim).
-
-        Returns:
-            logits (Tensor): Classification logits of shape (batch_size, num_classes).
-        """
         # Project raw ROI features to the hidden dimension
         projected_visual_embeds = self.visual_projection(visual_embeds)
 
-        # Forward pass through VisualBERT using both text and projected visual features.
+        # Forward pass through VisualBERT using both text and projected visual features
         outputs = self.visual_bert(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -53,7 +42,3 @@ class VBERTClassifier(nn.Module):
         logits = self.classifier(cls_embedding)  # (batch_size, num_classes)
 
         return logits
-
-
-if __name__ == "__main__":
-    pass

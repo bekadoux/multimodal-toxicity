@@ -1,28 +1,24 @@
 from PIL import Image
 import torch
 import torchvision.transforms as transforms
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 import torchvision.ops as ops
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-faster_rcnn = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
-faster_rcnn.eval()
 
 
 def preprocess_image(image_path):
     image = Image.open(image_path).convert("RGB")
     transform = transforms.Compose([transforms.ToTensor()])
-    image_tensor = transform(image)  # Apply transformation
+    image_tensor = transform(image)
     return image_tensor.unsqueeze(0)  # Add batch dimension
 
 
 def extract_visual_features(
     image_path,
+    faster_rcnn,
+    device,
     max_regions=36,
     score_threshold=0.5,
     spatial_scale=1 / 16.0,
 ):
-    # Preprocess image (assumed to return a tensor ready for the model)
     image_tensor = preprocess_image(image_path).to(device)  # expected shape: (C, H, W)
     _, _, height, width = image_tensor.shape  # Get dimensions directly from the tensor
 
@@ -52,12 +48,12 @@ def extract_visual_features(
         norm_boxes = torch.zeros((1, max_regions, 4), device=device)
         return raw_features, visual_attention_mask, norm_boxes
 
-    # Extract backbone features (assumed to be an OrderedDict)
+    # Extract backbone features
     with torch.no_grad():
         backbone_features = faster_rcnn.backbone(image_tensor)
         feature_map = list(backbone_features.values())[-1]
 
-    # ROI Align: extract region features using the boxes and spatial_scale.
+    # ROI Align: extract region features using the boxes and spatial_scale
     roi_pooled_features = ops.roi_align(
         feature_map, [boxes], output_size=(7, 7), spatial_scale=spatial_scale
     )  # Shape: (num_boxes, C, 7, 7)
@@ -97,8 +93,3 @@ def extract_visual_features(
     norm_boxes = norm_boxes.unsqueeze(0)  # Shape: (1, max_regions, 4)
 
     return raw_features, visual_attention_mask, norm_boxes
-
-
-if __name__ == "__main__":
-    pass
-

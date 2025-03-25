@@ -12,10 +12,15 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from MMHS150K import MMHS150KDataset
+from torchvision.models.detection import (
+    fasterrcnn_mobilenet_v3_large_fpn,
+    FasterRCNN_MobileNet_V3_Large_FPN_Weights,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = VBERTClassifier().to(device)
 
+# Weights to counter data imbalance and avoid overfitting to one class
 weights = torch.tensor([0.204, 1.929, 6.586, 5.949, 141.22, 3.963], dtype=torch.float)
 criterion = nn.CrossEntropyLoss(weight=weights.to(device))
 optimizer = optim.AdamW(model.parameters(), lr=2e-5)
@@ -51,10 +56,9 @@ def collate_fn(batch):
     }
 
 
-def train(model, epochs=5):
-    # Ensure the save directory exists.
-    version = "v3"
-    save_dir = f"./{version}/"
+def train(model, epochs=5, version_num=1):
+    version = f"v{version_num}"
+    save_dir = f"./models/{version}/"
     os.makedirs(save_dir, exist_ok=True)
 
     for epoch in range(epochs):
@@ -69,7 +73,6 @@ def train(model, epochs=5):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             visual_embeds = batch["visual_embeds"].to(device)
-            visual_attention_mask = batch["visual_attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
             # Forward pass
@@ -90,7 +93,7 @@ def train(model, epochs=5):
 
             batch_time = time.time() - start_time
 
-            # Update progress bar (this will update on a single line)
+            # Update progress bar
             progress_bar.set_postfix(loss=total_loss / (batch_idx + 1))
             if (batch_idx + 1) % 100 == 0:
                 tqdm.write(
@@ -118,118 +121,69 @@ def train(model, epochs=5):
         )
 
 
-# Validation step
-def validate(model, val_loader):
-    # Initialize counters for overall and per-class accuracy.
-    num_classes = 6
-    total_samples = 0
-    total_correct = 0
-    total_per_class = [0] * num_classes
-    correct_per_class = [0] * num_classes
-
-    # Create a tqdm progress bar over the validation DataLoader.
-    progress_bar = tqdm(val_loader, desc="Validating", leave=True)
-
-    with torch.no_grad():
-        for batch in progress_bar:
-            # Transfer batch data to GPU.
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            visual_embeds = batch["visual_embeds"].to(device)
-            labels = batch["labels"].to(device)
-
-            # Forward pass.
-            logits = model(input_ids, attention_mask, visual_embeds)
-            predictions = torch.argmax(logits, dim=1)
-
-            # Update overall accuracy counters.
-            total_samples += labels.size(0)
-            total_correct += (predictions == labels).sum().item()
-
-            # Update per-class counters.
-            for i in range(num_classes):
-                mask = labels == i
-                total_per_class[i] += mask.sum().item()
-                if mask.sum().item() > 0:
-                    correct_per_class[i] += (
-                        (predictions[mask] == labels[mask]).sum().item()
-                    )
-
-            # Update progress bar with current overall accuracy.
-            progress_bar.set_postfix({"Overall Acc": total_correct / total_samples})
-
-    overall_accuracy = total_correct / total_samples
-    print(f"\nOverall Validation Accuracy: {overall_accuracy:.4f}")
-
-    # Print per-class accuracy.
-    for i in range(num_classes):
-        if total_per_class[i] > 0:
-            class_accuracy = correct_per_class[i] / total_per_class[i]
-        else:
-            class_accuracy = 0.0
-        print(f"Class {i} Accuracy: {class_accuracy:.4f}")
-
-
-def test(model, test_loader, num_classes=6):
+def evaluate_model(model, data_loader, num_classes=6, plot_confusion_matrix=True):
     model.eval()
     total_correct = 0
     total_samples = 0
     all_true = []
     all_preds = []
 
-    progress_bar = tqdm(test_loader, desc="Testing", leave=True)
-
+    progress_bar = tqdm(data_loader, desc="Evaluating", leave=True)
     with torch.no_grad():
         for batch in progress_bar:
+            # Transfer batch data to device
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             visual_embeds = batch["visual_embeds"].to(device)
-            # If your model uses visual_attention_mask or norm_boxes, add them as needed.
             labels = batch["labels"].to(device)
 
-            # Forward pass (adjust if your model's forward expects additional inputs)
+            # Forward pass through the model
             logits = model(input_ids, attention_mask, visual_embeds)
-            predictions = torch.argmax(logits, dim=1)
+            preds = torch.argmax(logits, dim=1)
 
-            total_correct += (predictions == labels).sum().item()
+            total_correct += (preds == labels).sum().item()
             total_samples += labels.size(0)
-
             all_true.extend(labels.cpu().numpy())
-            all_preds.extend(predictions.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
 
             progress_bar.set_postfix({"Acc": total_correct / total_samples})
 
     overall_accuracy = total_correct / total_samples
-    print(f"Test Accuracy: {overall_accuracy:.4f}")
+    print(f"\nOverall Accuracy: {overall_accuracy:.4f}")
 
-    # Generate classification report
+    # Compute detailed classification metrics
     report = classification_report(
         all_true, all_preds, target_names=[f"Class {i}" for i in range(num_classes)]
     )
-    print("Classification Report:\n", report)
+    print("\nClassification Report:\n", report)
 
-    # Generate and plot confusion matrix
+    # Compute and plot confusion matrix.
     cm = confusion_matrix(all_true, all_preds)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
-        cm,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        xticklabels=[f"Pred {i}" for i in range(num_classes)],
-        yticklabels=[f"True {i}" for i in range(num_classes)],
-    )
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
-    plt.title("Confusion Matrix")
-    plt.show()
+    if plot_confusion_matrix:
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=[f"Pred {i}" for i in range(num_classes)],
+            yticklabels=[f"True {i}" for i in range(num_classes)],
+        )
+        plt.xlabel("Predicted Label")
+        plt.ylabel("True Label")
+        plt.title("Confusion Matrix")
+        plt.show()
 
 
 if __name__ == "__main__":
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+    faster_rcnn = fasterrcnn_mobilenet_v3_large_fpn(
+        weights=FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT
+    ).to(device)
+    faster_rcnn.eval()
 
     # File paths
-    MMHS150K_PATH = "../../data/MMHS150K"
+    MMHS150K_PATH = "../data/MMHS150K/"
     DATASET_PATH = f"{MMHS150K_PATH}/MMHS150K_GT.json"
     IMG_DIR = f"{MMHS150K_PATH}/img_resized"
     OCR_DIR = f"{MMHS150K_PATH}/img_txt/"
@@ -249,10 +203,15 @@ if __name__ == "__main__":
     with open(TEST_SPLIT, "r") as f:
         test_ids = set(f.read().splitlines())
 
-    # Create dataset and dataloaders
-    train_dataset = MMHS150KDataset(train_ids, data, tokenizer, IMG_DIR, OCR_DIR)
-    val_dataset = MMHS150KDataset(val_ids, data, tokenizer, IMG_DIR, OCR_DIR)
-    test_dataset = MMHS150KDataset(test_ids, data, tokenizer, IMG_DIR, OCR_DIR)
+    train_dataset = MMHS150KDataset(
+        train_ids, data, tokenizer, IMG_DIR, OCR_DIR, faster_rcnn, device
+    )
+    val_dataset = MMHS150KDataset(
+        val_ids, data, tokenizer, IMG_DIR, OCR_DIR, faster_rcnn, device
+    )
+    test_dataset = MMHS150KDataset(
+        test_ids, data, tokenizer, IMG_DIR, OCR_DIR, faster_rcnn, device
+    )
 
     num_workers = 0
     train_loader = DataLoader(
@@ -277,16 +236,17 @@ if __name__ == "__main__":
         shuffle=False,
         collate_fn=collate_fn,
         num_workers=num_workers,
-        # pin_memory=True
+        # pin_memory=True,
     )
 
-    # Load the checkpoint (adjust the checkpoint_path accordingly)
-    # checkpoint_path = "v1/vbert_v1_epoch1_iter2000.pt"
-    # checkpoint = torch.load(checkpoint_path, map_location=device)
-    # model.load_state_dict(checkpoint)
+    # Load the checkpoint
+    checkpoint_path = "./models/v1/vbert_v1_epoch1.pt"
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint)
 
-    # model.eval()  # set the model to evaluation mode
-    # validate(model, val_loader)
+    # Run validation
+    model.eval()
+    evaluate_model(model, val_loader)
 
-    model.train()
-    train(model, epochs=1)
+    # model.train()
+    # train(model, epochs=1)
