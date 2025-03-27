@@ -47,7 +47,6 @@ class MMHS150KDataset(Dataset):
 
         # Construct image path and extract visual features
         image_path = f"{self.img_dir}/{tweet_id}.jpg"
-        # You could add alternative extension checking if needed.
         raw_features, visual_attention_mask, norm_boxes = extract_visual_features(
             image_path=image_path, faster_rcnn=self.faster_rcnn, device=self.device
         )

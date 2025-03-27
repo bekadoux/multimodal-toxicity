@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -24,6 +25,13 @@ model = VBERTClassifier().to(device)
 weights = torch.tensor([0.204, 1.929, 6.586, 5.949, 141.22, 3.963], dtype=torch.float)
 criterion = nn.CrossEntropyLoss(weight=weights.to(device))
 optimizer = optim.AdamW(model.parameters(), lr=2e-5)
+
+logging.basicConfig(
+    filename="training.log",  # File to write logs to
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 def collate_fn(batch):
@@ -65,7 +73,7 @@ def train(model, epochs=5, version_num=1):
         model.train()
         total_loss = 0.0
 
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}")
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=True)
         for batch_idx, batch in enumerate(progress_bar):
             start_time = time.time()
 
@@ -101,24 +109,36 @@ def train(model, epochs=5, version_num=1):
                     f"Batch Time: {batch_time:.3f}s | Forward: {forward_time:.3f}s | Backward: {backward_time:.3f}s"
                 )
 
-            # Save the model every 1000 iterations
-            if (batch_idx + 1) % 1000 == 0:
+            # Log every 100 iterations
+            if (batch_idx + 1) % 10 == 0:
+                log_message = (
+                    f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(train_loader)} | "
+                    f"Loss: {loss.item():.4f} | Batch Time: {batch_time:.3f}s | "
+                    f"Forward: {forward_time:.3f}s | Backward: {backward_time:.3f}s"
+                )
+                tqdm.write(log_message)
+                logger.info(log_message)
+
+            # Save the model every 4250 iterations
+            if (batch_idx + 1) % 4250 == 0:
                 checkpoint_path = os.path.join(
                     save_dir, f"vbert_{version}_epoch{epoch+1}_iter{batch_idx+1}.pt"
                 )
                 torch.save(model.state_dict(), checkpoint_path)
-                tqdm.write(
-                    f"Saved model checkpoint at iteration {batch_idx+1} to {checkpoint_path}"
-                )
+                checkpoint_message = f"Saved model checkpoint at iteration {batch_idx+1} to {checkpoint_path}"
+                tqdm.write(checkpoint_message)
+                logger.info(checkpoint_message)
 
         # Save model after every epoch
         epoch_checkpoint_path = os.path.join(
             save_dir, f"vbert_{version}_epoch{epoch+1}.pt"
         )
         torch.save(model.state_dict(), epoch_checkpoint_path)
-        tqdm.write(
+        epoch_message = (
             f"Saved model checkpoint for epoch {epoch+1} to {epoch_checkpoint_path}"
         )
+        tqdm.write(epoch_message)
+        logger.info(epoch_message)
 
 
 def evaluate_model(model, data_loader, num_classes=6, plot_confusion_matrix=True):
@@ -240,13 +260,13 @@ if __name__ == "__main__":
     )
 
     # Load the checkpoint
-    checkpoint_path = "./models/v1/vbert_v1_epoch1.pt"
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint)
+    # checkpoint_path = "./models/v1/vbert_v1_epoch1.pt"
+    # checkpoint = torch.load(checkpoint_path, map_location=device)
+    # model.load_state_dict(checkpoint)
 
     # Run validation
-    model.eval()
-    evaluate_model(model, val_loader)
+    # model.eval()
+    # evaluate_model(model, val_loader)
 
-    # model.train()
-    # train(model, epochs=1)
+    model.train()
+    train(model, epochs=1)
