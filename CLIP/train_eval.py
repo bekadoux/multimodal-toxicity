@@ -6,6 +6,8 @@ from datamodule import MMHSDataModule
 from typing import Tuple
 from tqdm import tqdm
 import os
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 
 
 def train_epoch(
@@ -125,6 +127,20 @@ def train_model(
     data_module = MMHSDataModule(data_root, batch_size)
     data_module.setup()
 
+    all_labels = []
+    for tweet_id in data_module.train_dataset.split_ids:
+        sample = data_module.train_dataset.data[tweet_id]
+        label = max(set(sample["labels"]), key=sample["labels"].count)
+        all_labels.append(label)
+
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(all_labels),
+        y=all_labels,
+    )
+    weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(device)
+
+    criterion = nn.CrossEntropyLoss(weight=weights_tensor)
     model = CLIPClassifier(num_classes=6).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr)

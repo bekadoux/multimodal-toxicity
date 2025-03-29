@@ -65,3 +65,7 @@ class MMHS150KDataset(Dataset):
     @property
     def split_ids(self) -> List[str]:
         return self._split_ids
+
+    @property
+    def data(self) -> Dict[str, Dict]:
+        return self._data

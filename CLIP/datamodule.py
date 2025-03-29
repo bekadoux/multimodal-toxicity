@@ -58,3 +58,21 @@ class MMHSDataModule:
                 collate_fn=mmhs_collate_fn,
             )
         return None
+
+    @property
+    def train_dataset(self) -> MMHS150KDataset | None:
+        if self._train_dataset:
+            return self._train_dataset
+        return None
+
+    @property
+    def val_dataset(self) -> MMHS150KDataset | None:
+        if self._train_dataset:
+            return self._val_dataset
+        return None
+
+    @property
+    def test_dataset(self) -> MMHS150KDataset | None:
+        if self._train_dataset:
+            return self._test_dataset
+        return None
