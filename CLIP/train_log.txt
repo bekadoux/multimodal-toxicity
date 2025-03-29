@@ -1,0 +1,1 @@
+Iteration 100, Loss: 0.7924, Avg Loss: 0.9809

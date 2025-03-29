@@ -1,0 +1,60 @@
+import torch
+from torch.utils.data import DataLoader
+from dataset import MMHS150KDataset
+
+
+def mmhs_collate_fn(batch):
+    texts, images, labels = zip(*batch)
+    return list(texts), list(images), torch.tensor(labels)
+
+
+class MMHSDataModule:
+    def __init__(self, data_root: str, batch_size: int = 16, num_workers: int = 0):
+        self._data_root = data_root
+        self._batch_size = batch_size
+        self._num_workers = num_workers
+
+        self._train_dataset = None
+        self._val_dataset = None
+        self._test_dataset = None
+
+    def setup(self) -> None:
+        self._train_dataset = MMHS150KDataset(self._data_root, split="train")
+        self._val_dataset = MMHS150KDataset(self._data_root, split="val")
+        self._test_dataset = MMHS150KDataset(self._data_root, split="test")
+
+    @property
+    def train_dataloader(self) -> DataLoader | None:
+        if self._train_dataset is not None:
+            return DataLoader(
+                self._train_dataset,
+                batch_size=self._batch_size,
+                shuffle=True,
+                num_workers=self._num_workers,
+                collate_fn=mmhs_collate_fn,
+            )
+        return None
+
+    @property
+    def val_dataloader(self) -> DataLoader | None:
+        if self._val_dataset is not None:
+            return DataLoader(
+                self._val_dataset,
+                batch_size=self._batch_size,
+                shuffle=False,
+                num_workers=self._num_workers,
+                collate_fn=mmhs_collate_fn,
+            )
+        return None
+
+    @property
+    def test_dataloader(self) -> DataLoader | None:
+        if self._test_dataset is not None:
+            return DataLoader(
+                self._test_dataset,
+                batch_size=self._batch_size,
+                shuffle=False,
+                num_workers=self._num_workers,
+                collate_fn=mmhs_collate_fn,
+            )
+        return None

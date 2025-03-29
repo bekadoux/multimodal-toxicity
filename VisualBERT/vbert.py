@@ -110,7 +110,7 @@ def train(model, epochs=5, version_num=1):
                 )
 
             # Log every 100 iterations
-            if (batch_idx + 1) % 10 == 0:
+            if (batch_idx + 1) % 100 == 0:
                 log_message = (
                     f"Epoch {epoch+1}, Batch {batch_idx+1}/{len(train_loader)} | "
                     f"Loss: {loss.item():.4f} | Batch Time: {batch_time:.3f}s | "
@@ -137,6 +137,9 @@ def train(model, epochs=5, version_num=1):
         epoch_message = (
             f"Saved model checkpoint for epoch {epoch+1} to {epoch_checkpoint_path}"
         )
+
+        # TODO add automatic validation step after each epoch
+
         tqdm.write(epoch_message)
         logger.info(epoch_message)
 
@@ -269,4 +272,4 @@ if __name__ == "__main__":
     # evaluate_model(model, val_loader)
 
     model.train()
-    train(model, epochs=1)
+    train(model, epochs=5)
