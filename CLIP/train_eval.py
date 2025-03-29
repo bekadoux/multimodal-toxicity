@@ -142,7 +142,6 @@ def train_model(
 
     criterion = nn.CrossEntropyLoss(weight=weights_tensor)
     model = CLIPClassifier(num_classes=6).to(device)
-    criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr)
 
     for epoch in range(num_epochs):
