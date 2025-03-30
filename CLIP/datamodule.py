@@ -9,10 +9,17 @@ def mmhs_collate_fn(batch):
 
 
 class MMHSDataModule:
-    def __init__(self, data_root: str, batch_size: int = 16, num_workers: int = 0):
+    def __init__(
+        self,
+        data_root: str,
+        batch_size: int = 16,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+    ):
         self._data_root = data_root
         self._batch_size = batch_size
         self._num_workers = num_workers
+        self._pin_memory = pin_memory
 
         self._train_dataset = None
         self._val_dataset = None
@@ -32,6 +39,7 @@ class MMHSDataModule:
                 shuffle=True,
                 num_workers=self._num_workers,
                 collate_fn=mmhs_collate_fn,
+                pin_memory=self._pin_memory,
             )
         return None
 
@@ -44,6 +52,7 @@ class MMHSDataModule:
                 shuffle=False,
                 num_workers=self._num_workers,
                 collate_fn=mmhs_collate_fn,
+                pin_memory=True,
             )
         return None
 
@@ -56,6 +65,7 @@ class MMHSDataModule:
                 shuffle=False,
                 num_workers=self._num_workers,
                 collate_fn=mmhs_collate_fn,
+                pin_memory=True,
             )
         return None
 

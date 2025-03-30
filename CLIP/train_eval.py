@@ -119,12 +119,15 @@ def train_model(
     data_root: str,
     num_epochs: int = 3,
     batch_size: int = 16,
-    lr: float = 1e-4,
+    num_workers: int = 0,
+    lr: float = 1e-5,
     version: str = "v1",
 ) -> CLIPClassifier:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    data_module = MMHSDataModule(data_root, batch_size)
+    data_module = MMHSDataModule(
+        data_root, batch_size=batch_size, num_workers=num_workers, pin_memory=True
+    )
     data_module.setup()
 
     all_labels = []
