@@ -41,6 +41,12 @@ class MMHS150KDataset(Dataset):
         image = io.read_image(str(image_path)).float() / 255.0
         image = TF.convert_image_dtype(image, dtype=torch.float)
 
+        c, _, _ = image.shape
+        if c == 1:
+            image = image.repeat(3, 1, 1)
+        elif c == 4:
+            image = image[:3, ...]
+
         # Load OCR text from JSON
         ocr_path = self._ocr_dir / f"{tweet_id}.json"
         if ocr_path.exists():

@@ -93,63 +93,53 @@ class VisualFeaturePreprocessor(nn.Module):
     def forward(
         self, images: List[torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Ensure detector/backbone in eval mode so no targets required
         self._detector.eval()
         self._backbone.eval()
-        device = next(self._backbone.parameters()).device
 
-        with torch.no_grad():
-            # Pad images to same size for batch
-            heights = [img.shape[1] for img in images]
-            widths = [img.shape[2] for img in images]
-            max_h, max_w = max(heights), max(widths)
-            padded_imgs = []
-            for img in images:
-                c, h, w = img.shape
-                pad_h = max_h - h
-                pad_w = max_w - w
-                # pad format: (left, right, top, bottom)
-                padded = nn.functional.pad(img, (0, pad_w, 0, pad_h))
-                padded_imgs.append(padded.to(device))
-            batch = torch.stack(padded_imgs)
-
-            features = self._backbone(batch)
-            if isinstance(features, dict):
-                features = features["0"]
-            outputs = self._detector(batch)
-
+        device = next(self._projector.parameters()).device
         visual_embeds = []
         visual_token_type_ids = []
         visual_attention_masks = []
-        for out in outputs:
-            boxes = out["boxes"]
-            num_boxes = min(boxes.shape[0], 36)
 
-            if num_boxes > 0:
-                boxes = boxes[:num_boxes]
+        for img in images:
+            img = img.to(device)
+            with torch.no_grad():
+                feat_map = self._backbone(img.unsqueeze(0))
+                if isinstance(feat_map, dict):
+                    feat_map = feat_map["0"]
+                dets = self._detector(img.unsqueeze(0))
+
+            out = dets[0]
+            boxes = out["boxes"]
+            num = min(boxes.size(0), 36)
+
+            if num > 0:
+                selected = boxes[:num]
                 roi_feats = roi_align(
-                    features,
-                    [boxes],
+                    feat_map,
+                    [selected],
                     output_size=(1, 1),
                     spatial_scale=1.0,
                     sampling_ratio=-1,
-                ).view(num_boxes, -1)
-                projected_feats = self._projector(roi_feats)
-                padded_feats = nn.functional.pad(
-                    projected_feats, (0, 0, 0, 36 - num_boxes)
-                )
+                ).view(num, -1)
+                proj_feats = self._projector(roi_feats)
+                padded_feats = nn.functional.pad(proj_feats, (0, 0, 0, 36 - num))
             else:
                 padded_feats = torch.zeros(36, 2048, device=device)
-            visual_embeds.append(padded_feats)
 
-            attention_mask = torch.cat(
-                [
-                    torch.ones(num_boxes, device=device),
-                    torch.zeros(36 - num_boxes, device=device),
-                ]
+            visual_embeds.append(padded_feats)
+            mask = torch.cat(
+                [torch.ones(num, device=device), torch.zeros(36 - num, device=device)]
             )
-            token_type_ids = torch.ones(36, dtype=torch.long, device=device)
-            visual_attention_masks.append(attention_mask)
-            visual_token_type_ids.append(token_type_ids)
+            visual_attention_masks.append(mask)
+            visual_token_type_ids.append(
+                torch.ones(36, dtype=torch.long, device=device)
+            )
+
+            # Clear CUDA cache
+            del feat_map, dets
+            torch.cuda.empty_cache()
 
         return (
             torch.stack(visual_embeds),

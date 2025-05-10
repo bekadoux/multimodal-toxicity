@@ -12,7 +12,7 @@ def main(
     data_root: str,
     model_name: str = "VisualBERT",
     version: str = "v1",
-    batch_size: int = 4,
+    batch_size: int = 32,
     num_epochs: int = 5,
     lr: float = 2e-5,
     num_workers: int = 0,
@@ -77,4 +77,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main("./data/MMHS150K/", model_name="VisualBERT")
+    main("./data/MMHS150K/", batch_size=4, model_name="VisualBERT")
