@@ -177,5 +177,5 @@ cython_debug/
 /data/*
 !/data/.gitkeep
 
-/checkpoints/*
-!/checkpoints/.gitkeep
+/ckpt/*
+!/ckpt/.gitkeep

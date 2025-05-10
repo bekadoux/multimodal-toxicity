@@ -10,7 +10,7 @@ def save_model(
     epoch: int,
     version: str,
     model_name: str,
-    save_dir: str = "checkpoints",
+    save_dir: str = "ckpt",
 ) -> str:
     # Creates a subdirectory within save_dir for structure
     model_dir = os.path.join(save_dir, model_name)
