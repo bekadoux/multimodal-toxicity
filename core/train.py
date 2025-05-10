@@ -26,9 +26,7 @@ def train_epoch(
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    progress_bar = tqdm(
-        enumerate(dataloader), total=len(dataloader), desc="Training", leave=False
-    )
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Training")
 
     for i, batch in progress_bar:
         if process_batch:
@@ -71,8 +69,8 @@ def train_model(
     model_name: str = "model",
     process_batch=None,
 ):
-    for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch + 1}/{num_epochs}")
+    epoch_bar = tqdm(range(num_epochs), desc="Epochs")
+    for epoch in epoch_bar:
         train_loss, train_acc = train_epoch(
             model,
             data_module.train_dataloader,
@@ -91,8 +89,14 @@ def train_model(
             process_batch=process_batch,
         )
         print(f"Validation Loss: {val_loss:.4f}, Accuracy: {val_acc:.4f}")
-
         save_model(model, optimizer, epoch, version, model_name=model_name)
+
+        epoch_bar.set_postfix(
+            train_loss=f"{train_loss:.4f}",
+            train_acc=f"{train_acc:.4f}",
+            val_loss=f"{val_loss:.4f}",
+            val_acc=f"{val_acc:.4f}",
+        )
 
     print("\nTraining complete.")
     return model
