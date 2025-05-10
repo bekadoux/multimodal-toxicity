@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from dataset import MMHS150KDataset
+from dataset.dataset import MMHS150KDataset
+from typing import Tuple, List
 
 
 def mmhs_collate_fn(batch):
@@ -30,6 +31,16 @@ class MMHSDataModule:
         self._val_dataset = MMHS150KDataset(self._data_root, split="val")
         self._test_dataset = MMHS150KDataset(self._data_root, split="test")
 
+    def process_batch(
+        self,
+        batch: Tuple[List[str], List[torch.Tensor], torch.Tensor],
+        device: torch.device,
+    ) -> Tuple[Tuple[List[str], List[torch.Tensor]], torch.Tensor]:
+        texts, images, labels = batch
+        images = [img.to(device, non_blocking=True) for img in images]
+        labels = labels.to(device, non_blocking=True)
+        return (texts, images), labels
+
     @property
     def train_dataloader(self) -> DataLoader | None:
         if self._train_dataset is not None:
@@ -52,7 +63,7 @@ class MMHSDataModule:
                 shuffle=False,
                 num_workers=self._num_workers,
                 collate_fn=mmhs_collate_fn,
-                pin_memory=True,
+                pin_memory=self._pin_memory,
             )
         return None
 
@@ -65,7 +76,7 @@ class MMHSDataModule:
                 shuffle=False,
                 num_workers=self._num_workers,
                 collate_fn=mmhs_collate_fn,
-                pin_memory=True,
+                pin_memory=self._pin_memory,
             )
         return None
 

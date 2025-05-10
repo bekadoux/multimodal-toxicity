@@ -177,5 +177,5 @@ cython_debug/
 /data/*
 !/data/.gitkeep
 
-/VisualBERT/models/*
-!/VisualBERT/models/.gitkeep
+/checkpoints/*
+!/checkpoints/.gitkeep

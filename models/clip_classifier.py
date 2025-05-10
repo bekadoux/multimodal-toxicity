@@ -21,6 +21,7 @@ class CLIPFeatureExtractor(nn.Module):
             return_tensors="pt",
             padding=True,
             truncation=True,
+            do_rescale=False,  # Disables rescaling because image tensors are in 0, 1 range
         )
         device = next(self._clip.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}

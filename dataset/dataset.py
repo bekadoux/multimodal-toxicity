@@ -1,8 +1,10 @@
 from pathlib import Path
 import json
-from PIL import Image
 from torch.utils.data import Dataset
 from typing import Tuple, List, Dict
+import torchvision.io as io
+import torchvision.transforms.functional as TF
+import torch
 
 
 class MMHS150KDataset(Dataset):
@@ -30,12 +32,14 @@ class MMHS150KDataset(Dataset):
     def __len__(self) -> int:
         return len(self._data)
 
-    def __getitem__(self, idx: int) -> Tuple[str, Image.Image, int]:
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, int]:
         tweet_id = self._split_ids[idx]
         sample = self._data[tweet_id]
         tweet_text = sample["tweet_text"]
         image_path = self._image_dir / f"{tweet_id}.jpg"
-        image = Image.open(image_path).convert("RGB")
+
+        image = io.read_image(str(image_path)).float() / 255.0
+        image = TF.convert_image_dtype(image, dtype=torch.float)
 
         # Load OCR text from JSON
         ocr_path = self._ocr_dir / f"{tweet_id}.json"
