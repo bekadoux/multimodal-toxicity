@@ -1,7 +1,6 @@
-from math import pi
 import torch
 from torch import nn, optim
-from collections import Counter
+# from collections import Counter
 
 from dataset.datamodule import MMHSDataModule
 from models.vbert_classifier import VisualBERTClassifier
@@ -77,4 +76,5 @@ def main(
 
 
 if __name__ == "__main__":
+    # main("./data/MMHS150K/", batch_size=32, model_name="VisualBERT")
     main("./data/MMHS150K/", batch_size=4, model_name="VisualBERT")
