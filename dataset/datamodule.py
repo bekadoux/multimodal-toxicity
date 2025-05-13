@@ -14,13 +14,17 @@ class MMHSDataModule:
         self,
         data_root: str,
         batch_size: int = 16,
-        num_workers: int = 0,
-        pin_memory: bool = False,
+        num_workers: int = 0,  # No parallel processing by default for stability
+        prefetch_factor=2,  # Default PyTorch prefetch factor by default
+        pin_memory: bool = False,  # No pinned memory by default for stability
+        persistent_workers=False,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
         self._num_workers = num_workers
+        self._prefetch_factor = prefetch_factor
         self._pin_memory = pin_memory
+        self._persistent_workers = persistent_workers
 
         self._train_dataset = None
         self._val_dataset = None
@@ -49,8 +53,10 @@ class MMHSDataModule:
                 batch_size=self._batch_size,
                 shuffle=True,
                 num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
                 collate_fn=mmhs_collate_fn,
                 pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
             )
         return None
 
@@ -62,8 +68,10 @@ class MMHSDataModule:
                 batch_size=self._batch_size,
                 shuffle=False,
                 num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
                 collate_fn=mmhs_collate_fn,
                 pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
             )
         return None
 
@@ -75,8 +83,10 @@ class MMHSDataModule:
                 batch_size=self._batch_size,
                 shuffle=False,
                 num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
                 collate_fn=mmhs_collate_fn,
                 pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
             )
         return None
 

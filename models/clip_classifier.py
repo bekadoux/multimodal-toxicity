@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-from transformers import CLIPModel, CLIPProcessor
+from transformers.models.clip import CLIPModel
+from transformers import (
+    CLIPTokenizerFast,
+    CLIPImageProcessorFast,
+)
 from typing import List, Any
 
 
@@ -8,28 +12,33 @@ class CLIPFeatureExtractor(nn.Module):
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
         super(CLIPFeatureExtractor, self).__init__()
         self._clip = CLIPModel.from_pretrained(model_name)
-        self._processor = CLIPProcessor.from_pretrained(model_name, use_fast=False)
+
+        # Split processors for optimization
+        self._tokenizer = CLIPTokenizerFast.from_pretrained(model_name)
+        self._image_processor = CLIPImageProcessorFast.from_pretrained(model_name)
+
         self._projection_dim = self._clip.config.projection_dim
 
     def forward(self, input_texts: List[str], input_images: List[Any]) -> torch.Tensor:
-        if not callable(self._processor):
-            raise TypeError("CLIPProcessor did not load correctly and is not callable.")
+        device = next(self._clip.parameters()).device
 
-        inputs = self._processor(
-            text=input_texts,
+        text_inputs = self._tokenizer(
+            input_texts, return_tensors="pt", padding=True, truncation=True
+        ).to(device)
+
+        image_inputs = self._image_processor(
             images=input_images,
             return_tensors="pt",
-            padding=True,
-            truncation=True,
             do_rescale=False,  # Disables rescaling because image tensors are in 0, 1 range
-        )
-        device = next(self._clip.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+            input_data_format="channels_first",
+            device=device,
+        )["pixel_values"]
 
-        outputs = self._clip(**inputs)
+        outputs = self._clip(**text_inputs, pixel_values=image_inputs)
         image_features = outputs.image_embeds
         text_features = outputs.text_embeds
         fused_features = torch.cat((image_features, text_features), dim=1)
+
         return fused_features
 
     @property
