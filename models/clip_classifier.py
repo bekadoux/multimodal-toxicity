@@ -42,7 +42,6 @@ class ClassificationHead(nn.Module):
         self, input_dim: int, hidden_dim: int = 512, num_classes: int = 6
     ) -> None:
         super(ClassificationHead, self).__init__()
-        print(input_dim)
         self._net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
