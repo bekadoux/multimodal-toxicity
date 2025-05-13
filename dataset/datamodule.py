@@ -15,9 +15,9 @@ class MMHSDataModule:
         data_root: str,
         batch_size: int = 16,
         num_workers: int = 0,  # No parallel processing by default for stability
-        prefetch_factor=2,  # Default PyTorch prefetch factor by default
+        prefetch_factor: int = 2,  # Default PyTorch prefetch factor by default
         pin_memory: bool = False,  # No pinned memory by default for stability
-        persistent_workers=False,
+        persistent_workers: bool = False,
     ):
         self._data_root = data_root
         self._batch_size = batch_size

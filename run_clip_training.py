@@ -10,11 +10,13 @@ def main(
     data_root: str,
     model_name: str = "CLIPClassifier",
     version: str = "v1",
-    batch_size: int = 32,
+    batch_size: int = 128,
     num_epochs: int = 10,
     lr: float = 1e-5,
     num_workers: int = 0,
+    prefetch_factor: int = 2,
     pin_memory: bool = False,
+    persistent_workers: bool = False,
     clip_model_name: str = "openai/clip-vit-base-patch32",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -24,7 +26,9 @@ def main(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
         pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     dm.setup()
 
@@ -67,4 +71,11 @@ def main(
 
 
 if __name__ == "__main__":
-    main("./data/MMHS150K/", model_name="CLIPClassifier")
+    main(
+        "./data/MMHS150K/",
+        model_name="CLIPClassifier",
+        num_workers=128,
+        prefetch_factor=8,
+        pin_memory=True,
+        persistent_workers=True,
+    )

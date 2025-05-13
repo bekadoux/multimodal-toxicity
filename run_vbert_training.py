@@ -15,7 +15,9 @@ def main(
     num_epochs: int = 5,
     lr: float = 2e-5,
     num_workers: int = 0,
+    prefetch_factor: int = 2,
     pin_memory: bool = False,
+    persistent_workers: bool = False,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -24,7 +26,9 @@ def main(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
         pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
     dm.setup()
 
@@ -76,5 +80,5 @@ def main(
 
 
 if __name__ == "__main__":
-    # main("./data/MMHS150K/", batch_size=32, model_name="VisualBERT")
-    main("./data/MMHS150K/", batch_size=4, model_name="VisualBERT")
+    main("./data/MMHS150K/", batch_size=32, model_name="VisualBERT")
+    # main("./data/MMHS150K/", batch_size=4, model_name="VisualBERT")

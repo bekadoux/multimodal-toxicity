@@ -12,19 +12,23 @@ def validate(
     data_root: str,
     num_classes: int,
     batch_size: int = 32,
+    prefetch_factor: int = 2,
     num_workers: int = 0,
     pin_memory: bool = False,
+    persistent_workers: bool = False,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Data module
     dm = MMHSDataModule(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
         pin_memory=pin_memory,
+        persistent_workers=persistent_workers,
     )
+
     dm.setup()
     val_loader = dm.val_dataloader
     if val_loader is None:
