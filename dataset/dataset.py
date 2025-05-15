@@ -32,7 +32,7 @@ class MMHS150KDataset(Dataset):
     def __len__(self) -> int:
         return len(self._data)
 
-    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, int]:
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
         tweet_id = self._split_ids[idx]
         sample = self._data[tweet_id]
         tweet_text = sample["tweet_text"]
@@ -59,10 +59,9 @@ class MMHS150KDataset(Dataset):
         # Combine text semantically
         combined_text = f"{tweet_text}\nOCR: {ocr_text}"
 
-        # Simple majority vote over 3 annotators
-        label = max(set(sample["labels"]), key=sample["labels"].count)
+        votes = torch.tensor(sample["labels"], dtype=torch.long)
 
-        return combined_text, image, label
+        return combined_text, image, votes
 
     @property
     def split(self) -> str:

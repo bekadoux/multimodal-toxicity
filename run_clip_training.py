@@ -4,13 +4,15 @@ from torch import nn, optim
 from dataset.datamodule import MMHSDataModule
 from models.clip_classifier import CLIPClassifier
 from core.train import train_model, evaluate
+from core.criteria import SoftFocalLoss
 
 
 def main(
     data_root: str,
     model_name: str = "CLIPClassifier",
     version: str = "v1",
-    batch_size: int = 128,
+    soft_labels: bool = True,
+    batch_size: int = 64,
     num_epochs: int = 10,
     lr: float = 1e-5,
     num_workers: int = 0,
@@ -33,16 +35,16 @@ def main(
     dm.setup()
 
     # Precomputed class counts
-    counts = torch.tensor([114214.0, 9794.0, 2939.0, 3100.0, 131.0, 4645.0])
+    # counts = torch.tensor([114214.0, 9794.0, 2939.0, 3100.0, 131.0, 4645.0])
     num_classes = 6
-    total = counts.sum()
-    weights = total / (counts * num_classes)
-    class_weights = weights.to(device)
+    # total = counts.sum()
+    # weights = total / (counts * num_classes)
+    # class_weights = weights.to(device)
 
     model = CLIPClassifier(num_classes=num_classes, model_name=clip_model_name).to(
         device
     )
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = SoftFocalLoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr)
 
     trained_model = train_model(
@@ -54,27 +56,31 @@ def main(
         num_epochs=num_epochs,
         version=version,
         model_name=model_name,
+        soft_labels=soft_labels,
         process_batch=dm.process_batch,
     )
 
     test_loader = dm.test_dataloader
     if test_loader is not None:
-        test_loss, test_acc = evaluate(
+        test_avg_loss, test_loose_acc, test_strict_acc = evaluate(
             trained_model,
             test_loader,
             criterion,
             device,
+            soft_labels=soft_labels,
             process_batch=dm.process_batch,
-            num_classes=num_classes,
         )
-        print(f"Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
+        print(
+            f"Test Loss: {test_avg_loss:.4f}, Test Loose Acc: {test_loose_acc:.4f}, Test Strict Acc: {test_strict_acc:.4f}"
+        )
 
 
 if __name__ == "__main__":
     main(
         "./data/MMHS150K/",
-        model_name="CLIPClassifier",
-        num_workers=128,
+        model_name="CLIPClassifierSoftLabels",
+        batch_size=128,
+        num_workers=32,
         prefetch_factor=8,
         pin_memory=True,
         persistent_workers=True,

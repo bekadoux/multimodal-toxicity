@@ -6,7 +6,27 @@ from typing import Tuple, List
 
 def mmhs_collate_fn(batch):
     texts, images, labels = zip(*batch)
-    return list(texts), list(images), torch.tensor(labels)
+    labels = torch.stack(labels, dim=0)
+    return list(texts), list(images), labels
+
+
+# Convert a vector of votes into a length-num_classes distribution
+def to_label_distribution(
+    votes: torch.Tensor, num_classes: int = 6, soft: bool = True
+) -> torch.Tensor:
+    v = votes.flatten().to(torch.int64)
+    counts = torch.bincount(v, minlength=num_classes).float()
+    if counts.sum() == 0:
+        # fallback to uniform
+        return torch.ones(num_classes) / num_classes
+
+    if soft:
+        return counts / counts.sum()
+    # hard: one-hot majority
+    maj = counts.argmax().item()
+    onehot = torch.zeros(num_classes, dtype=torch.float32, device=v.device)
+    onehot[maj] = 1.0
+    return onehot
 
 
 class MMHSDataModule:
@@ -39,11 +59,18 @@ class MMHSDataModule:
         self,
         batch: Tuple[List[str], List[torch.Tensor], torch.Tensor],
         device: torch.device,
+        soft_labels: bool = True,
     ) -> Tuple[Tuple[List[str], List[torch.Tensor]], torch.Tensor]:
-        texts, images, labels = batch
+        texts, images, votes = batch
         images = [img.to(device, non_blocking=True) for img in images]
-        labels = labels.to(device, non_blocking=True)
-        return (texts, images), labels
+
+        # Build a [B,6] distribution for every sample
+        targets = torch.stack(
+            [to_label_distribution(v, num_classes=6, soft=soft_labels) for v in votes],
+            dim=0,
+        ).to(device, non_blocking=True)
+
+        return (texts, images), targets
 
     @property
     def train_dataloader(self) -> DataLoader | None:

@@ -1,4 +1,4 @@
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -21,14 +21,17 @@ def evaluate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    soft_labels: bool = True,
     process_batch=None,
-    num_classes: Optional[int] = None,
-) -> Tuple[float, float]:
+) -> Tuple[float, float, float]:
     model.eval()
     running_loss = 0.0
-    correct = 0
+    correct_strict = 0
+    correct_loose = 0
     total = 0
-    y_true = []
+
+    y_true_loose = []
+    y_true_strict = []
     y_pred = []
 
     if process_batch is None:
@@ -44,14 +47,49 @@ def evaluate(
 
             running_loss += loss.item()
             preds = outputs.argmax(dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
+            batch_size = preds.size(0)
+            idx = torch.arange(batch_size, device=device)
 
-            y_true.extend(labels.cpu().tolist())
+            # majority‐vote labels:
+            maj_labels = labels.argmax(dim=1) if soft_labels else labels
+
+            hits_strict = (preds == maj_labels).sum().item()
+            correct_strict += hits_strict
+
+            """
+            Loose list of hits, checks if the model's top output is among the labels,
+            disregarding majority votes (if soft_labels == True)
+            """
+            if soft_labels:
+                hits_loose = (labels[idx, preds] > 0).sum().item()
+            else:
+                hits_loose = hits_strict
+            correct_loose += hits_loose
+
+            total += batch_size
+
+            # strict list (always majority)
+            y_true_strict.extend(maj_labels.cpu().tolist())
+            true_loose = torch.where(
+                (soft_labels and (labels[idx, preds] > 0)), preds, maj_labels
+            )
+            y_true_loose.extend(true_loose.cpu().tolist())
             y_pred.extend(preds.cpu().tolist())
 
-    if num_classes and num_classes > 2:
-        compute_metrics(y_true, y_pred)
-        compute_confusion_matrix(y_true, y_pred)
+    # Strict (majority-vote) metrics
+    print("\n=== Strict (majority-vote) metrics ===")
+    compute_metrics(y_true_strict, y_pred)
+    print("Confusion Matrix (strict):")
+    compute_confusion_matrix(y_true_strict, y_pred)
 
-    return running_loss / len(dataloader), correct / total
+    # Loose metrics
+    print("\n=== Loose metrics ===")
+    compute_metrics(y_true_loose, y_pred)
+    print("Confusion Matrix (loose):")
+    compute_confusion_matrix(y_true_loose, y_pred)
+
+    avg_loss = running_loss / len(dataloader)
+    strict_acc = correct_strict / total
+    loose_acc = correct_loose / total
+
+    return avg_loss, loose_acc, strict_acc
