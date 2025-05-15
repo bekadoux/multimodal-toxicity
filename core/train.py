@@ -49,7 +49,7 @@ def train_epoch(
         preds = outputs.argmax(dim=1)
         idx = torch.arange(preds.size(0), device=preds.device)
         correct_loose += (labels[idx, preds] > 0).sum().item()
-        correct_strict = (preds == labels.argmax(dim=1)).sum().item()
+        correct_strict += (preds == labels.argmax(dim=1)).sum().item()
         total += preds.size(0)
 
         avg_loss = running_loss / (total // labels.size(0))

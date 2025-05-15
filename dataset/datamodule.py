@@ -37,6 +37,7 @@ class MMHSDataModule:
         prefetch_factor: int = 2,  # Default PyTorch prefetch factor by default
         pin_memory: bool = False,  # No pinned memory by default for stability
         persistent_workers: bool = False,
+        load_descriptions: bool = True,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -44,15 +45,25 @@ class MMHSDataModule:
         self._prefetch_factor = prefetch_factor
         self._pin_memory = pin_memory
         self._persistent_workers = persistent_workers
+        self._load_descriptions = load_descriptions
 
         self._train_dataset = None
         self._val_dataset = None
         self._test_dataset = None
 
     def setup(self) -> None:
-        self._train_dataset = MMHS150KDataset(self._data_root, split="train")
-        self._val_dataset = MMHS150KDataset(self._data_root, split="val")
-        self._test_dataset = MMHS150KDataset(self._data_root, split="test")
+        img_desc_json = (
+            "data/MMHS150K/image_descriptions.json" if self._load_descriptions else None
+        )
+        self._train_dataset = MMHS150KDataset(
+            self._data_root, split="train", img_desc_json=img_desc_json
+        )
+        self._val_dataset = MMHS150KDataset(
+            self._data_root, split="val", img_desc_json=img_desc_json
+        )
+        self._test_dataset = MMHS150KDataset(
+            self._data_root, split="test", img_desc_json=img_desc_json
+        )
 
     def process_batch(
         self,

@@ -23,7 +23,10 @@ class CLIPFeatureExtractor(nn.Module):
         device = next(self._clip.parameters()).device
 
         text_inputs = self._tokenizer(
-            input_texts, return_tensors="pt", padding=True, truncation=True
+            input_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
         ).to(device)
 
         image_inputs = self._image_processor(

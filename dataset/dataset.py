@@ -8,7 +8,9 @@ import torch
 
 
 class MMHS150KDataset(Dataset):
-    def __init__(self, data_root: str, split: str = "train"):
+    def __init__(
+        self, data_root: str, split: str = "train", img_desc_json: str | None = None
+    ):
         self._root = Path(data_root)
         self._split = split
         self._image_dir = self._root / "img_resized"
@@ -16,6 +18,10 @@ class MMHS150KDataset(Dataset):
         self._json_path = self._root / "MMHS150K_GT.json"
         self._split_ids = self._load_split_ids()
         self._data = self._load_metadata()
+        self._image_descriptions = None
+        if img_desc_json:
+            with open(img_desc_json, "r", encoding="utf-8") as f:
+                self._descriptions = json.load(f)
 
     def _load_split_ids(self) -> List[str]:
         split_file = self._root / "splits" / f"{self._split}_ids.txt"
@@ -58,6 +64,12 @@ class MMHS150KDataset(Dataset):
 
         # Combine text semantically
         combined_text = f"{tweet_text}\nOCR: {ocr_text}"
+
+        # Add image description if available
+        if self._descriptions is not None:
+            img_desc = self._descriptions.get(tweet_id)
+            if img_desc:
+                combined_text += f"\nIMG_DESC: {img_desc}"
 
         votes = torch.tensor(sample["labels"], dtype=torch.long)
 
