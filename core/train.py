@@ -70,13 +70,14 @@ def train_model(
     criterion: nn.Module,
     optimizer: optim.Optimizer,
     device: torch.device,
+    start_epoch: int = 0,
     num_epochs: int = 5,
     version: str = "v1",
     model_name: str = "model",
     soft_labels: bool = True,
     process_batch=None,
 ):
-    epoch_bar = tqdm(range(num_epochs), desc="Epochs")
+    epoch_bar = tqdm(range(start_epoch, num_epochs), desc="Epochs")
     for epoch in epoch_bar:
         train_loss, loose_acc, strict_acc = train_epoch(
             model,

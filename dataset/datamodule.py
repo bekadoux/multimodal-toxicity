@@ -6,8 +6,7 @@ from typing import Tuple, List
 
 def mmhs_collate_fn(batch):
     texts, images, labels = zip(*batch)
-    labels = torch.stack(labels, dim=0)
-    return list(texts), list(images), labels
+    return list(texts), list(images), list(labels)
 
 
 # Convert a vector of votes into a length-num_classes distribution
