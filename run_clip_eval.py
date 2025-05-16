@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 
@@ -20,6 +21,9 @@ def validate(
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+
+    # Fixes tokenizers warning when num_workers > 0
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     dm = MMHSDataModule(
         data_root=data_root,
