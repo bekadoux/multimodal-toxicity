@@ -51,8 +51,7 @@ def evaluate(
             idx = torch.arange(batch_size, device=device)
 
             # majority‐vote labels:
-            maj_labels = labels.argmax(dim=1) if soft_labels else labels
-
+            maj_labels = labels.argmax(dim=1)
             hits_strict = (preds == maj_labels).sum().item()
             correct_strict += hits_strict
 
@@ -70,9 +69,12 @@ def evaluate(
 
             # strict list (always majority)
             y_true_strict.extend(maj_labels.cpu().tolist())
-            true_loose = torch.where(
-                (soft_labels and (labels[idx, preds] > 0)), preds, maj_labels
-            )
+
+            if soft_labels:
+                condition = labels[idx, preds] > 0
+                true_loose = torch.where(condition, preds, maj_labels)
+            else:
+                true_loose = maj_labels
             y_true_loose.extend(true_loose.cpu().tolist())
             y_pred.extend(preds.cpu().tolist())
 

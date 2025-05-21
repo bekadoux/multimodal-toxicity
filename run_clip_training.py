@@ -1,6 +1,6 @@
 import os
 import torch
-from torch import nn, optim
+from torch import optim
 
 from dataset.datamodule import MMHSDataModule
 from models.clip_classifier import CLIPClassifier
@@ -83,8 +83,8 @@ if __name__ == "__main__":
     main(
         "./data/MMHS150K/",
         model_name="CLIPClassifierSoftLabels",
-        batch_size=128,
-        num_workers=32,
+        batch_size=16,
+        num_workers=16,
         prefetch_factor=8,
         pin_memory=True,
         persistent_workers=True,

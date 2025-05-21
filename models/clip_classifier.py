@@ -51,13 +51,17 @@ class CLIPFeatureExtractor(nn.Module):
 
 class ClassificationHead(nn.Module):
     def __init__(
-        self, input_dim: int, hidden_dim: int = 512, num_classes: int = 6
+        self, input_dim: int, hidden_dim: int = 1024, num_classes: int = 6
     ) -> None:
         super(ClassificationHead, self).__init__()
         self._net = nn.Sequential(
+            nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.GELU(),
+            nn.Dropout(0.6),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.6),
             nn.Linear(hidden_dim, num_classes),
         )
 
