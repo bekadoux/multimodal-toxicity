@@ -60,7 +60,7 @@ class ClassificationHead(nn.Module):
 
 class VisualBERTTextTokenizer:
     def __init__(
-        self, tokenizer_name: str = "bert-base-uncased", max_length: int = 128
+        self, tokenizer_name: str = "bert-base-uncased", max_length: int = 256
     ) -> None:
         self._tokenizer = BertTokenizer.from_pretrained(tokenizer_name)
         self._max_length = max_length

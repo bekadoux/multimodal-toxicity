@@ -2,7 +2,7 @@ import os
 import torch
 from torch import optim
 
-from dataset.datamodule import MMHSDataModule
+from dataset.datamodule import HatefulMemesDataModule
 from models.clip_classifier import CLIPClassifier
 from core.train import train_model, evaluate
 from core.criteria import SoftFocalLoss
@@ -28,7 +28,7 @@ def main(
     # Fixes tokenizers warning when num_workers > 0
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    dm = MMHSDataModule(
+    dm = HatefulMemesDataModule(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -40,7 +40,7 @@ def main(
 
     # Precomputed class counts
     # counts = torch.tensor([114214.0, 9794.0, 2939.0, 3100.0, 131.0, 4645.0])
-    num_classes = 6
+    num_classes = 2
     # total = counts.sum()
     # weights = total / (counts * num_classes)
     # class_weights = weights.to(device)
@@ -49,7 +49,7 @@ def main(
         device
     )
     criterion = SoftFocalLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
     trained_model = train_model(
         model=model,
@@ -81,11 +81,12 @@ def main(
 
 if __name__ == "__main__":
     main(
-        "./data/MMHS150K/",
-        model_name="CLIPClassifierSoftLabels",
+        "./data/hateful_memes/",
+        model_name="CLIPClassifier",
         batch_size=16,
         num_workers=16,
         prefetch_factor=8,
         pin_memory=True,
         persistent_workers=True,
+        soft_labels=False,
     )

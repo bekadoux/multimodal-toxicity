@@ -1,12 +1,19 @@
 import torch
 from torch.utils.data import DataLoader
-from dataset.dataset import MMHS150KDataset
+from dataset.dataset import MMHS150KDataset, HatefulMemesDataset
 from typing import Tuple, List
 
 
 def mmhs_collate_fn(batch):
     texts, images, labels = zip(*batch)
     return list(texts), list(images), list(labels)
+
+
+def hateful_memes_collate_fn(batch):
+    texts, images, labels = zip(*batch)
+    # Convert images from list of Tensors to a list (no stacking due to possible variable sizes)
+    # Convert labels from list to tensor for batch processing
+    return list(texts), list(images), torch.stack(labels)
 
 
 # Convert a vector of votes into a length-num_classes distribution
@@ -144,3 +151,117 @@ class MMHSDataModule:
         if self._train_dataset:
             return self._test_dataset
         return None
+
+
+class HatefulMemesDataModule:
+    def __init__(
+        self,
+        data_root: str,
+        batch_size: int = 16,
+        num_workers: int = 0,
+        prefetch_factor: int = 2,
+        pin_memory: bool = False,
+        persistent_workers: bool = False,
+        split_train: str = "train",
+        split_val: str = "dev_seen",
+        split_test: str = "test_seen",
+        load_descriptions: bool = True,
+    ):
+        self._data_root = data_root
+        self._batch_size = batch_size
+        self._num_workers = num_workers
+        self._prefetch_factor = prefetch_factor
+        self._pin_memory = pin_memory
+        self._persistent_workers = persistent_workers
+        self._split_train = split_train
+        self._split_val = split_val
+        self._split_test = split_test
+        self._load_descriptions = load_descriptions
+
+        self._train_dataset = None
+        self._val_dataset = None
+        self._test_dataset = None
+
+    def setup(self):
+        img_desc_json = (
+            "data/hateful_memes/image_descriptions.json"
+            if self._load_descriptions
+            else None
+        )
+        self._train_dataset = HatefulMemesDataset(
+            self._data_root, split=self._split_train, img_desc_json=img_desc_json
+        )
+        self._val_dataset = HatefulMemesDataset(
+            self._data_root, split=self._split_val, img_desc_json=img_desc_json
+        )
+        self._test_dataset = HatefulMemesDataset(
+            self._data_root, split=self._split_test, img_desc_json=img_desc_json
+        )
+
+    def process_batch(
+        self,
+        batch: Tuple[List[str], List[torch.Tensor], torch.Tensor],
+        device: torch.device,
+        soft_labels: bool = False,
+    ) -> Tuple[Tuple[List[str], List[torch.Tensor]], torch.Tensor]:
+        texts, images, labels = batch
+        images = [img.to(device, non_blocking=True) for img in images]
+        labels = labels.to(device, non_blocking=True)
+        return (texts, images), labels
+
+    @property
+    def train_dataloader(self) -> DataLoader | None:
+        if self._train_dataset is not None:
+            return DataLoader(
+                self._train_dataset,
+                batch_size=self._batch_size,
+                shuffle=True,
+                num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
+                collate_fn=hateful_memes_collate_fn,
+                pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
+            )
+        return None
+
+    @property
+    def val_dataloader(self) -> DataLoader | None:
+        if self._val_dataset is not None:
+            return DataLoader(
+                self._val_dataset,
+                batch_size=self._batch_size,
+                shuffle=False,
+                num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
+                collate_fn=hateful_memes_collate_fn,
+                pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
+            )
+        return None
+
+    @property
+    def test_dataloader(self) -> DataLoader | None:
+        if self._test_dataset is not None:
+            return DataLoader(
+                self._test_dataset,
+                batch_size=self._batch_size,
+                shuffle=False,
+                num_workers=self._num_workers,
+                prefetch_factor=self._prefetch_factor,
+                collate_fn=hateful_memes_collate_fn,
+                pin_memory=self._pin_memory,
+                persistent_workers=self._persistent_workers,
+            )
+        return None
+
+    @property
+    def train_dataset(self) -> HatefulMemesDataset | None:
+        return self._train_dataset
+
+    @property
+    def val_dataset(self) -> HatefulMemesDataset | None:
+        return self._val_dataset
+
+    @property
+    def test_dataset(self) -> HatefulMemesDataset | None:
+        return self._test_dataset

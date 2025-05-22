@@ -41,7 +41,7 @@ def main(
 
     model = VisualBERTClassifier(num_classes=num_classes).to(device)
     criterion = SoftFocalLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
     trained_model = train_model(
         model=model,

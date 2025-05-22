@@ -94,3 +94,81 @@ class MMHS150KDataset(Dataset):
     @property
     def data(self) -> Dict[str, Dict]:
         return self._data
+
+
+class HatefulMemesDataset(Dataset):
+    def __init__(
+        self,
+        data_root: str,
+        split: str = "train",  # train/dev/test
+        img_desc_json: str | None = None,
+    ):
+        self._root = Path(data_root)
+        self._split = split
+        self._image_dir = self._root / "img"
+        self._jsonl_path = self._root / f"{split}.jsonl"
+        self._data = self._load_metadata()
+        self._descriptions = None
+        if img_desc_json:
+            with open(img_desc_json, "r", encoding="utf-8") as f:
+                self._descriptions = json.load(f)
+
+    def _load_metadata(self) -> List[Dict]:
+        data = []
+        for line in open(self._jsonl_path, "r", encoding="utf-8"):
+            entry = json.loads(line)
+            img_filename = Path(entry["img"]).name
+            image_path = self._image_dir / img_filename
+            if not image_path.exists():
+                print(f"Skipping missing image: {image_path}")
+                continue
+            data.append(entry)
+        return data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
+        sample = self._data[idx]
+        img_filename = sample["img"]
+        image_path = self._image_dir / Path(img_filename).name
+
+        # Read and normalize image
+        image = io.read_image(str(image_path)).float() / 255.0
+        image = TF.convert_image_dtype(image, dtype=torch.float)
+        c, _, _ = image.shape
+        if c == 1:
+            image = image.repeat(3, 1, 1)
+        elif c == 4:
+            image = image[:3, ...]
+
+        text = sample["text"]
+        combined_text = text
+
+        # Add image description if available
+        if self._descriptions is not None:
+            img_desc = self._descriptions.get(img_filename)
+            if img_desc:
+                combined_text += f"\nIMG_DESC: {img_desc}"
+
+        # Label: 0 = not hateful, 1 = hateful
+        label = sample.get("label")
+        if label is None:  # in case there is no label
+            label_tensor = torch.tensor([-1, -1], dtype=torch.long)
+        else:
+            label_tensor = torch.zeros(2, dtype=torch.long)
+            label_tensor[label] = 1
+
+        return combined_text, image, label_tensor
+
+    @property
+    def split(self) -> str:
+        return self._split
+
+    @property
+    def image_dir(self) -> Path:
+        return self._image_dir
+
+    @property
+    def data(self) -> List[Dict]:
+        return self._data
