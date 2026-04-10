@@ -1,9 +1,17 @@
-from typing import Tuple, List
+from typing import Any, List
+
 import torch
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from sklearn.metrics import classification_report, confusion_matrix
+
+
+def append_log(log_path: str | None, content: str) -> None:
+    if log_path is None:
+        return
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(content)
 
 
 def compute_metrics(y_true: List[int], y_pred: List[int]) -> None:
@@ -21,18 +29,17 @@ def evaluate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
-    soft_labels: bool = True,
     process_batch=None,
-) -> Tuple[float, float, float]:
+    log_path: str | None = None,
+) -> dict[str, Any]:
     model.eval()
     running_loss = 0.0
-    correct_strict = 0
-    correct_loose = 0
+    correct = 0
     total = 0
 
-    y_true_loose = []
-    y_true_strict = []
+    y_true = []
     y_pred = []
+    y_score = []
 
     if process_batch is None:
         raise ValueError(
@@ -46,52 +53,51 @@ def evaluate(
             loss = criterion(outputs, labels)
 
             running_loss += loss.item()
+            if outputs.dim() == 2 and outputs.size(1) == 2:
+                probs = torch.softmax(outputs, dim=1)[:, 1]
+                y_score.extend(probs.cpu().tolist())
             preds = outputs.argmax(dim=1)
             batch_size = preds.size(0)
-            idx = torch.arange(batch_size, device=device)
 
-            # majority‐vote labels:
-            maj_labels = labels.argmax(dim=1)
-            hits_strict = (preds == maj_labels).sum().item()
-            correct_strict += hits_strict
-
-            """
-            Loose list of hits, checks if the model's top output is among the labels,
-            disregarding majority votes (if soft_labels == True)
-            """
-            if soft_labels:
-                hits_loose = (labels[idx, preds] > 0).sum().item()
-            else:
-                hits_loose = hits_strict
-            correct_loose += hits_loose
+            correct += (preds == labels).sum().item()
 
             total += batch_size
 
-            # strict list (always majority)
-            y_true_strict.extend(maj_labels.cpu().tolist())
-
-            if soft_labels:
-                condition = labels[idx, preds] > 0
-                true_loose = torch.where(condition, preds, maj_labels)
-            else:
-                true_loose = maj_labels
-            y_true_loose.extend(true_loose.cpu().tolist())
+            y_true.extend(labels.cpu().tolist())
             y_pred.extend(preds.cpu().tolist())
 
-    # Strict (majority-vote) metrics
-    print("\n=== Strict (majority-vote) metrics ===")
-    compute_metrics(y_true_strict, y_pred)
-    print("Confusion Matrix (strict):")
-    compute_confusion_matrix(y_true_strict, y_pred)
+    report = classification_report(y_true, y_pred, digits=4)
+    cm = confusion_matrix(y_true, y_pred)
 
-    # Loose metrics
-    print("\n=== Loose metrics ===")
-    compute_metrics(y_true_loose, y_pred)
-    print("Confusion Matrix (loose):")
-    compute_confusion_matrix(y_true_loose, y_pred)
+    print("\n=== Evaluation metrics ===")
+    compute_metrics(y_true, y_pred)
+    print("Confusion Matrix:")
+    compute_confusion_matrix(y_true, y_pred)
 
     avg_loss = running_loss / len(dataloader)
-    strict_acc = correct_strict / total
-    loose_acc = correct_loose / total
+    accuracy = correct / total
+    auroc = None
+    if y_score and len(set(y_true)) > 1:
+        auroc = float(roc_auc_score(y_true, y_score))
 
-    return avg_loss, loose_acc, strict_acc
+    metrics = {
+        "loss": avg_loss,
+        "accuracy": accuracy,
+        "auroc": auroc,
+    }
+
+    auroc_str = "N/A" if auroc is None else f"{auroc:.4f}"
+
+    append_log(
+        log_path,
+        (
+            "=== Evaluation metrics ===\n"
+            "Classification Report:\n"
+            f"{report}\n"
+            "Confusion Matrix:\n"
+            f"{cm}\n"
+            f"Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}, AUROC: {auroc_str}\n\n"
+        ),
+    )
+
+    return metrics

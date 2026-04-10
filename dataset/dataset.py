@@ -1,15 +1,16 @@
-from pathlib import Path
 import json
-from torch.utils.data import Dataset
-from typing import Tuple, List, Dict
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+import torch
 import torchvision.io as io
 import torchvision.transforms.functional as TF
-import torch
+from torch.utils.data import Dataset
 
 
 class MMHS150KDataset(Dataset):
     def __init__(
-        self, data_root: str, split: str = "train", img_desc_json: str | None = None
+        self, data_root: str, split: str = "train", captions_json: str | None = None
     ):
         self._root = Path(data_root)
         self._split = split
@@ -18,10 +19,10 @@ class MMHS150KDataset(Dataset):
         self._json_path = self._root / "MMHS150K_GT.json"
         self._split_ids = self._load_split_ids()
         self._data = self._load_metadata()
-        self._descriptions = None
-        if img_desc_json:
-            with open(img_desc_json, "r", encoding="utf-8") as f:
-                self._descriptions = json.load(f)
+        self._captions = None
+        if captions_json:
+            with open(captions_json, "r", encoding="utf-8") as f:
+                self._captions = json.load(f)
 
     def _load_split_ids(self) -> List[str]:
         split_file = self._root / "splits" / f"{self._split}_ids.txt"
@@ -62,18 +63,17 @@ class MMHS150KDataset(Dataset):
         else:
             ocr_text = ""
 
-        # Combine text semantically
-        combined_text = (
-            f"{tweet_text}\nOCR: {ocr_text}"
-            if not self._descriptions
-            else f"{tweet_text}\n"  # OCR removed to spare tokens (mainly for CLIP), since descriptions provide OCR
-        )
+        combined_parts = [tweet_text]
+        if ocr_text:
+            combined_parts.append(f"OCR: {ocr_text}")
 
-        # Add image description if available
-        if self._descriptions is not None:
-            img_desc = self._descriptions.get(tweet_id)
-            if img_desc:
-                combined_text += f"\nIMG_DESC: {img_desc}"
+        if self._captions is not None:
+            image_key = image_path.relative_to(self._root).as_posix()
+            image_caption = self._captions.get(image_key)
+            if image_caption:
+                combined_parts.append(f"IMG_CAPTION: {image_caption}")
+
+        combined_text = "\n".join(combined_parts)
 
         votes = torch.tensor(sample["labels"], dtype=torch.long)
 
@@ -101,17 +101,17 @@ class HatefulMemesDataset(Dataset):
         self,
         data_root: str,
         split: str = "train",  # train/dev/test
-        img_desc_json: str | None = None,
+        captions_json: str | None = None,
     ):
         self._root = Path(data_root)
         self._split = split
         self._image_dir = self._root / "img"
         self._jsonl_path = self._root / f"{split}.jsonl"
         self._data = self._load_metadata()
-        self._descriptions = None
-        if img_desc_json:
-            with open(img_desc_json, "r", encoding="utf-8") as f:
-                self._descriptions = json.load(f)
+        self._captions = None
+        if captions_json:
+            with open(captions_json, "r", encoding="utf-8") as f:
+                self._captions = json.load(f)
 
     def _load_metadata(self) -> List[Dict]:
         data = []
@@ -145,19 +145,18 @@ class HatefulMemesDataset(Dataset):
         text = sample["text"]
         combined_text = text
 
-        # Add image description if available
-        if self._descriptions is not None:
-            img_desc = self._descriptions.get(img_filename)
-            if img_desc:
-                combined_text += f"\nIMG_DESC: {img_desc}"
+        if self._captions is not None:
+            image_key = image_path.relative_to(self._root).as_posix()
+            image_caption = self._captions.get(image_key)
+            if image_caption:
+                combined_text += f"\nIMG_CAPTION: {image_caption}"
 
         # Label: 0 = not hateful, 1 = hateful
         label = sample.get("label")
-        if label is None:  # in case there is no label
-            label_tensor = torch.tensor([-1, -1], dtype=torch.long)
+        if label is None:
+            label_tensor = torch.tensor(-1, dtype=torch.long)
         else:
-            label_tensor = torch.zeros(2, dtype=torch.long)
-            label_tensor[label] = 1
+            label_tensor = torch.tensor(label, dtype=torch.long)
 
         return combined_text, image, label_tensor
 

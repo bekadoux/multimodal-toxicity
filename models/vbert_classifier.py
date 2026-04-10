@@ -1,12 +1,13 @@
+from typing import Any, List, Tuple
+
 import torch
 import torch.nn as nn
-from transformers import VisualBertModel, BertTokenizer
-from typing import Any, Tuple, List
 from torchvision.models.detection import (
-    fasterrcnn_mobilenet_v3_large_fpn,
     FasterRCNN_MobileNet_V3_Large_FPN_Weights,
+    fasterrcnn_mobilenet_v3_large_fpn,
 )
 from torchvision.ops import roi_align
+from transformers import BertTokenizer, VisualBertModel
 
 
 class VisualBERTFeatureExtractor(nn.Module):
@@ -40,7 +41,7 @@ class VisualBERTFeatureExtractor(nn.Module):
 
 class ClassificationHead(nn.Module):
     def __init__(
-        self, input_dim: int, hidden_dim: int = 1024, num_classes: int = 6
+        self, input_dim: int, hidden_dim: int = 1024, num_classes: int = 2
     ) -> None:
         super(ClassificationHead, self).__init__()
         self._net = nn.Sequential(
@@ -154,7 +155,7 @@ class VisualFeaturePreprocessor(nn.Module):
 
 class VisualBERTClassifier(nn.Module):
     def __init__(
-        self, num_classes: int = 6, model_name: str = "uclanlp/visualbert-vqa-coco-pre"
+        self, num_classes: int = 2, model_name: str = "uclanlp/visualbert-vqa-coco-pre"
     ) -> None:
         super(VisualBERTClassifier, self).__init__()
         self._feature_extractor = VisualBERTFeatureExtractor(model_name)

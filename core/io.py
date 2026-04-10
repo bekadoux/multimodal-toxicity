@@ -1,7 +1,8 @@
 import os
+from typing import Optional, Tuple
+
 import torch
 from torch import nn, optim
-from typing import Tuple, Optional
 
 
 def save_model(
@@ -11,6 +12,8 @@ def save_model(
     version: str,
     model_name: str,
     save_dir: str = "ckpt",
+    val_loss: float | None = None,
+    val_acc: float | None = None,
 ) -> str:
     # Creates a subdirectory within save_dir for structure
     model_dir = os.path.join(save_dir, model_name)
@@ -24,6 +27,10 @@ def save_model(
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
     }
+    if val_loss is not None:
+        checkpoint["val_loss"] = val_loss
+    if val_acc is not None:
+        checkpoint["val_acc"] = val_acc
 
     torch.save(checkpoint, filepath)
     return filepath

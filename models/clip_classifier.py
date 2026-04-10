@@ -1,23 +1,28 @@
+from typing import Any, List
+
 import torch
 import torch.nn as nn
-from transformers.models.clip import CLIPModel
-from transformers import (
-    CLIPTokenizerFast,
-    CLIPImageProcessorFast,
-)
-from typing import List, Any
+import torch.nn.functional as F
+from transformers import CLIPTokenizerFast
+from transformers.models.clip import CLIPImageProcessor, CLIPModel
 
 
 class CLIPFeatureExtractor(nn.Module):
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
         super(CLIPFeatureExtractor, self).__init__()
         self._clip = CLIPModel.from_pretrained(model_name)
+        for param in self._clip.parameters():
+            param.requires_grad = False
+        self._clip.eval()
 
         # Split processors for optimization
         self._tokenizer = CLIPTokenizerFast.from_pretrained(model_name)
-        self._image_processor = CLIPImageProcessorFast.from_pretrained(model_name)
+        self._image_processor = CLIPImageProcessor.from_pretrained(model_name)
 
-        self._projection_dim = self._clip.config.projection_dim
+        projection_dim = self._clip.config.projection_dim
+        if projection_dim is None:
+            raise ValueError("CLIP config did not define projection_dim")
+        self._projection_dim = projection_dim
 
     def forward(self, input_texts: List[str], input_images: List[Any]) -> torch.Tensor:
         device = next(self._clip.parameters()).device
@@ -32,7 +37,7 @@ class CLIPFeatureExtractor(nn.Module):
         image_inputs = self._image_processor(
             images=input_images,
             return_tensors="pt",
-            do_rescale=False,  # Disables rescaling because image tensors are in 0, 1 range
+            do_rescale=False,  # Image tensors are already in the 0-1 range.
             input_data_format="channels_first",
             device=device,
         )["pixel_values"]
@@ -51,17 +56,14 @@ class CLIPFeatureExtractor(nn.Module):
 
 class ClassificationHead(nn.Module):
     def __init__(
-        self, input_dim: int, hidden_dim: int = 1024, num_classes: int = 6
+        self, input_dim: int, hidden_dim: int = 512, num_classes: int = 2
     ) -> None:
         super(ClassificationHead, self).__init__()
         self._net = nn.Sequential(
             nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim),
             nn.GELU(),
-            nn.Dropout(0.6),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(0.6),
+            nn.Dropout(0.3),
             nn.Linear(hidden_dim, num_classes),
         )
 
@@ -71,7 +73,7 @@ class ClassificationHead(nn.Module):
 
 class CLIPClassifier(nn.Module):
     def __init__(
-        self, num_classes: int = 6, model_name: str = "openai/clip-vit-base-patch32"
+        self, num_classes: int = 2, model_name: str = "openai/clip-vit-base-patch32"
     ) -> None:
         super(CLIPClassifier, self).__init__()
         self._feature_extractor = CLIPFeatureExtractor(model_name)
