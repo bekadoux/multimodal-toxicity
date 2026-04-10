@@ -19,6 +19,7 @@ def validate_vbert(
     pin_memory: bool = False,
     persistent_workers: bool = False,
     load_captions: bool = True,
+    max_visual_tokens: int = 16,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -42,7 +43,10 @@ def validate_vbert(
             "Validation DataLoader is not available. Did you call setup()?"
         )
 
-    model = VisualBERTClassifier(num_classes=num_classes).to(device)
+    model = VisualBERTClassifier(
+        num_classes=num_classes,
+        max_visual_tokens=max_visual_tokens,
+    ).to(device)
     model, _, _ = load_model(
         checkpoint_path,
         model,

@@ -116,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    train_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
 
     eval_parser = subparsers.add_parser("eval", help="Run single-checkpoint evaluation")
     eval_subparsers = eval_parser.add_subparsers(dest="model", required=True)
@@ -137,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     eval_vbert_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_vbert_parser)
+    eval_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
 
     eval_all_parser = subparsers.add_parser(
         "eval-all",
@@ -283,6 +285,7 @@ def main() -> None:
             pin_memory=args.pin_memory,
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
+            max_visual_tokens=args.max_visual_tokens,
         )
         return
 
@@ -316,6 +319,7 @@ def main() -> None:
             pin_memory=args.pin_memory,
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
+            max_visual_tokens=args.max_visual_tokens,
         )
         return
 

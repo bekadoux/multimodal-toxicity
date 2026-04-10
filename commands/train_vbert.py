@@ -24,6 +24,7 @@ def train_vbert(
     pin_memory: bool = False,
     persistent_workers: bool = False,
     load_captions: bool = True,
+    max_visual_tokens: int = 16,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -50,9 +51,12 @@ def train_vbert(
     )
     print(class_weight_message)
 
-    model = VisualBERTClassifier(num_classes=num_classes).to(device)
+    model = VisualBERTClassifier(
+        num_classes=num_classes,
+        max_visual_tokens=max_visual_tokens,
+    ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(model._classifier.parameters(), lr=lr, weight_decay=1e-4)
 
     trained_model = train_model(
         model=model,

@@ -6,7 +6,6 @@ from torchvision.models.detection import (
     FasterRCNN_MobileNet_V3_Large_FPN_Weights,
     fasterrcnn_mobilenet_v3_large_fpn,
 )
-from torchvision.ops import roi_align
 from transformers import BertTokenizer, VisualBertModel
 
 
@@ -14,6 +13,9 @@ class VisualBERTFeatureExtractor(nn.Module):
     def __init__(self, model_name: str = "uclanlp/visualbert-vqa-coco-pre") -> None:
         super(VisualBERTFeatureExtractor, self).__init__()
         self._visual_bert = VisualBertModel.from_pretrained(model_name)
+        for param in self._visual_bert.parameters():
+            param.requires_grad = False
+        self._visual_bert.eval()
         self._hidden_size = self._visual_bert.config.hidden_size
 
     def forward(
@@ -24,13 +26,15 @@ class VisualBERTFeatureExtractor(nn.Module):
         visual_token_type_ids: torch.Tensor,
         visual_attention_mask: torch.Tensor,
     ) -> torch.Tensor:
-        outputs = self._visual_bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            visual_embeds=visual_embeds,
-            visual_token_type_ids=visual_token_type_ids,
-            visual_attention_mask=visual_attention_mask,
-        )
+        self._visual_bert.eval()
+        with torch.no_grad():
+            outputs = self._visual_bert(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                visual_embeds=visual_embeds,
+                visual_token_type_ids=visual_token_type_ids,
+                visual_attention_mask=visual_attention_mask,
+            )
         cls_embedding = outputs.last_hidden_state[:, 0, :]  # CLS token
         return cls_embedding
 
@@ -41,17 +45,14 @@ class VisualBERTFeatureExtractor(nn.Module):
 
 class ClassificationHead(nn.Module):
     def __init__(
-        self, input_dim: int, hidden_dim: int = 1024, num_classes: int = 2
+        self, input_dim: int, hidden_dim: int = 512, num_classes: int = 2
     ) -> None:
         super(ClassificationHead, self).__init__()
         self._net = nn.Sequential(
             nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim),
             nn.GELU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.3),
             nn.Linear(hidden_dim, num_classes),
         )
 
@@ -82,7 +83,7 @@ class VisualBERTTextTokenizer:
 
 
 class VisualFeaturePreprocessor(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, max_regions: int = 16) -> None:
         super().__init__()
         self._detector = fasterrcnn_mobilenet_v3_large_fpn(
             weights=FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT
@@ -94,6 +95,9 @@ class VisualFeaturePreprocessor(nn.Module):
 
         # Projection layer to match 2048 visual
         self._projector = nn.Linear(256, 2048)
+        for param in self._projector.parameters():
+            param.requires_grad = False
+        self._max_regions = max_regions
 
     def forward(
         self, images: List[torch.Tensor]
@@ -101,50 +105,81 @@ class VisualFeaturePreprocessor(nn.Module):
         # Ensure detector/backbone in eval mode so no targets required
         self._detector.eval()
         self._backbone.eval()
+        self._projector.eval()
 
         device = next(self._projector.parameters()).device
+        images = [img.to(device) for img in images]
+
+        with torch.no_grad():
+            transformed_images, _ = self._detector.transform(images, None)
+            features = self._backbone(transformed_images.tensors)
+            if isinstance(features, torch.Tensor):
+                features = {"0": features}
+            proposals, _ = self._detector.rpn(transformed_images, features, None)
+            detections, _ = self._detector.roi_heads(
+                features,
+                proposals,
+                transformed_images.image_sizes,
+                None,
+            )
+
+        selected_boxes = [
+            detection["boxes"][: self._max_regions] for detection in detections
+        ]
+        region_counts = [boxes.size(0) for boxes in selected_boxes]
+        total_regions = sum(region_counts)
+
+        projected: torch.Tensor | None = None
+        if total_regions > 0:
+            with torch.no_grad():
+                roi_feats = self._detector.roi_heads.box_roi_pool(
+                    features,
+                    selected_boxes,
+                    transformed_images.image_sizes,
+                )
+                pooled_feats = roi_feats.mean(dim=(-1, -2))
+                projected = self._projector(pooled_feats)
+
         visual_embeds = []
         visual_token_type_ids = []
         visual_attention_masks = []
 
-        for img in images:
-            img = img.to(device)
-            with torch.no_grad():
-                feat_map = self._backbone(img.unsqueeze(0))
-                if isinstance(feat_map, dict):
-                    feat_map = feat_map["0"]
-                dets = self._detector(img.unsqueeze(0))
-
-            out = dets[0]
-            boxes = out["boxes"]
-            num = min(boxes.size(0), 36)
-
-            if num > 0:
-                selected = boxes[:num]
-                roi_feats = roi_align(
-                    feat_map,
-                    [selected],
-                    output_size=(1, 1),
-                    spatial_scale=1.0,
-                    sampling_ratio=-1,
-                ).view(num, -1)
-                proj_feats = self._projector(roi_feats)
-                padded_feats = nn.functional.pad(proj_feats, (0, 0, 0, 36 - num))
+        cursor = 0
+        for region_count in region_counts:
+            if region_count > 0:
+                if projected is None:
+                    raise RuntimeError("Projected ROI features were not computed")
+                region_features = projected[cursor : cursor + region_count]
+                cursor += region_count
+                if region_count < self._max_regions:
+                    padding = torch.zeros(
+                        self._max_regions - region_count,
+                        2048,
+                        device=device,
+                    )
+                    padded_feats = torch.cat((region_features, padding), dim=0)
+                else:
+                    padded_feats = region_features
             else:
-                padded_feats = torch.zeros(36, 2048, device=device)
+                padded_feats = torch.zeros(self._max_regions, 2048, device=device)
+
+            if padded_feats.shape != (self._max_regions, 2048):
+                raise RuntimeError(
+                    "Unexpected visual feature shape: "
+                    f"{tuple(padded_feats.shape)} for max_regions={self._max_regions}"
+                )
 
             visual_embeds.append(padded_feats)
             mask = torch.cat(
-                [torch.ones(num, device=device), torch.zeros(36 - num, device=device)]
+                [
+                    torch.ones(region_count, device=device),
+                    torch.zeros(self._max_regions - region_count, device=device),
+                ]
             )
             visual_attention_masks.append(mask)
             visual_token_type_ids.append(
-                torch.ones(36, dtype=torch.long, device=device)
+                torch.ones(self._max_regions, dtype=torch.long, device=device)
             )
-
-            # Clear CUDA cache
-            del feat_map, dets
-            torch.cuda.empty_cache()
 
         return (
             torch.stack(visual_embeds),
@@ -155,12 +190,17 @@ class VisualFeaturePreprocessor(nn.Module):
 
 class VisualBERTClassifier(nn.Module):
     def __init__(
-        self, num_classes: int = 2, model_name: str = "uclanlp/visualbert-vqa-coco-pre"
+        self,
+        num_classes: int = 2,
+        model_name: str = "uclanlp/visualbert-vqa-coco-pre",
+        max_visual_tokens: int = 16,
     ) -> None:
         super(VisualBERTClassifier, self).__init__()
         self._feature_extractor = VisualBERTFeatureExtractor(model_name)
         self._text_tokenizer = VisualBERTTextTokenizer()
-        self._visual_preprocessor = VisualFeaturePreprocessor()
+        self._visual_preprocessor = VisualFeaturePreprocessor(
+            max_regions=max_visual_tokens
+        )
         self._classifier = ClassificationHead(
             input_dim=self._feature_extractor.output_dim, num_classes=num_classes
         )
