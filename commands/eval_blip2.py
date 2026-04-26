@@ -1,32 +1,59 @@
 import os
+from typing import Any
 
 import torch
 from torch import nn
 
 from core.eval import evaluate
 from core.io import load_model
-from dataset.datamodule import build_eval_data_module
-from models.clip_classifier import CLIPClassifier
+from dataset.datamodule import build_eval_data_module, to_majority_label
+from models.blip2_classifier import Blip2BatchCollator, Blip2Classifier
 
 
-def validate_clip(
+def process_blip2_batch(
+    batch: tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]],
+    device: torch.device,
+    num_classes: int,
+) -> tuple[tuple[dict[str, Any]], torch.Tensor]:
+    model_inputs, labels = batch
+    model_inputs = {
+        key: value.to(device, non_blocking=True)
+        if isinstance(value, torch.Tensor)
+        else value
+        for key, value in model_inputs.items()
+    }
+
+    if isinstance(labels, torch.Tensor):
+        targets = labels.to(device, non_blocking=True)
+    else:
+        targets = torch.stack(
+            [to_majority_label(v, num_classes=num_classes) for v in labels],
+            dim=0,
+        ).to(device, non_blocking=True)
+
+    return (model_inputs,), targets
+
+
+def validate_blip2(
     checkpoint_path: str,
     data_root: str,
     num_classes: int = 2,
-    batch_size: int = 32,
+    batch_size: int = 16,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
     load_captions: bool = True,
-    clip_model_name: str = "ViT-L-14",
-    clip_pretrained: str = "datacomp_xl_s13b_b90k",
+    blip2_model_name: str = "Salesforce/blip2-itm-vit-g",
+    projected_dim: int = 512,
     metadata_file: str = "MMHS150K_GT.json",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    collate_fn = Blip2BatchCollator(blip2_model_name)
 
     dm = build_eval_data_module(
         data_root=data_root,
@@ -38,6 +65,7 @@ def validate_clip(
         load_captions=load_captions,
         num_classes=num_classes,
         metadata_filename=metadata_file,
+        collate_fn=collate_fn,
     )
     dm.setup()
     val_loader = dm.val_dataloader
@@ -46,10 +74,12 @@ def validate_clip(
             "Validation DataLoader is not available. Did you call setup()?"
         )
 
-    model = CLIPClassifier(
+    torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+    model = Blip2Classifier(
         num_classes=num_classes,
-        model_name=clip_model_name,
-        pretrained=clip_pretrained,
+        model_name=blip2_model_name,
+        torch_dtype=torch_dtype,
+        projected_dim=projected_dim,
     ).to(device)
     model, _, _ = load_model(
         checkpoint_path,
@@ -65,7 +95,11 @@ def validate_clip(
         val_loader,
         criterion,
         device,
-        process_batch=dm.process_batch,
+        process_batch=lambda batch, dev: process_blip2_batch(
+            batch,
+            dev,
+            num_classes,
+        ),
     )
     val_auroc_str = (
         "N/A" if val_metrics["auroc"] is None else f"{val_metrics['auroc']:.4f}"

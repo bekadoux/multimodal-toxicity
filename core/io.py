@@ -14,12 +14,16 @@ def save_model(
     save_dir: str = "ckpt",
     val_loss: float | None = None,
     val_acc: float | None = None,
+    val_auroc: float | None = None,
+    tag: str | None = None,
 ) -> str:
     # Creates a subdirectory within save_dir for structure
     model_dir = os.path.join(save_dir, model_name)
     os.makedirs(model_dir, exist_ok=True)
 
     filename = f"{version}_epoch{epoch + 1}.pt"
+    if tag is not None:
+        filename = f"{version}_{tag}_epoch{epoch + 1}.pt"
     filepath = os.path.join(model_dir, filename)
 
     checkpoint = {
@@ -31,6 +35,8 @@ def save_model(
         checkpoint["val_loss"] = val_loss
     if val_acc is not None:
         checkpoint["val_acc"] = val_acc
+    if val_auroc is not None:
+        checkpoint["val_auroc"] = val_auroc
 
     torch.save(checkpoint, filepath)
     return filepath

@@ -36,7 +36,9 @@ def evaluate_all_checkpoints(
     pin_memory: bool = False,
     persistent_workers: bool = False,
     load_captions: bool = True,
-    clip_model_name: str = "openai/clip-vit-base-patch32",
+    clip_model_name: str = "ViT-L-14",
+    clip_pretrained: str = "datacomp_xl_s13b_b90k",
+    metadata_file: str = "MMHS150K_GT.json",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -52,6 +54,7 @@ def evaluate_all_checkpoints(
         persistent_workers=persistent_workers,
         load_captions=load_captions,
         num_classes=num_classes,
+        metadata_filename=metadata_file,
     )
     dm.setup()
     val_loader = dm.val_dataloader
@@ -71,9 +74,11 @@ def evaluate_all_checkpoints(
     results: list[dict[str, float | int | str]] = []
 
     for ckpt_path in ckpt_paths:
-        model = CLIPClassifier(num_classes=num_classes, model_name=clip_model_name).to(
-            device
-        )
+        model = CLIPClassifier(
+            num_classes=num_classes,
+            model_name=clip_model_name,
+            pretrained=clip_pretrained,
+        ).to(device)
         model, _, epoch = load_model(
             ckpt_path,
             model,

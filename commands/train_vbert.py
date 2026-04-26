@@ -3,7 +3,8 @@ import os
 import torch
 from torch import nn, optim
 
-from core.train import evaluate, train_model
+from core.eval import evaluate_best_checkpoints
+from core.train import train_model
 from dataset.datamodule import HatefulMemesDataModule
 from models.vbert_classifier import VisualBERTClassifier
 
@@ -25,6 +26,8 @@ def train_vbert(
     persistent_workers: bool = False,
     load_captions: bool = True,
     max_visual_tokens: int = 16,
+    weight_decay: float = 1e-3,
+    checkpoint_strategy: str = "best-per-metric",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -56,9 +59,13 @@ def train_vbert(
         max_visual_tokens=max_visual_tokens,
     ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
-    optimizer = optim.AdamW(model._classifier.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(
+        model._classifier.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
 
-    trained_model = train_model(
+    _, best_checkpoint_paths_by_metric = train_model(
         model=model,
         data_module=dm,
         criterion=criterion,
@@ -72,22 +79,19 @@ def train_vbert(
         model_name=model_name,
         process_batch=dm.process_batch,
         train_log_preamble=class_weight_message,
+        checkpoint_strategy=checkpoint_strategy,
     )
 
     test_loader = dm.test_dataloader
     if test_loader is not None:
-        test_metrics = evaluate(
-            trained_model,
-            test_loader,
-            criterion,
-            device,
+        evaluate_best_checkpoints(
+            best_checkpoint_paths_by_metric,
+            lambda: VisualBERTClassifier(
+                num_classes=num_classes,
+                max_visual_tokens=max_visual_tokens,
+            ),
+            dataloader=test_loader,
+            criterion=criterion,
+            device=device,
             process_batch=dm.process_batch,
-        )
-        test_auroc_str = (
-            "N/A" if test_metrics["auroc"] is None else f"{test_metrics['auroc']:.4f}"
-        )
-        print(
-            f"Test Loss: {test_metrics['loss']:.4f}, "
-            f"Accuracy: {test_metrics['accuracy']:.4f}, "
-            f"AUROC: {test_auroc_str}"
         )

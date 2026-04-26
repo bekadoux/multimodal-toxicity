@@ -54,6 +54,14 @@ def _format_best_metric_summary(
     )
 
 
+def _format_metric_label(metric_name: str) -> str:
+    return {
+        "loss": "loss",
+        "accuracy": "accuracy",
+        "auroc": "AUROC",
+    }[metric_name]
+
+
 def train_epoch(
     model: nn.Module,
     dataloader: DataLoader,
@@ -122,6 +130,7 @@ def train_model(
     train_log_path: str = "train_log.txt",
     eval_log_path: str = "eval_log.txt",
     train_log_preamble: str | None = None,
+    checkpoint_strategy: str = "best-per-metric",
 ):
     if checkpoint_limit == 0 or checkpoint_limit < -1:
         raise ValueError("checkpoint_limit must be -1 or a positive integer")
@@ -129,11 +138,22 @@ def train_model(
         raise ValueError("patience must be at least 1")
     if max_epochs < 1:
         raise ValueError("max_epochs must be at least 1")
+    if checkpoint_strategy not in {"best-per-metric", "best-loss"}:
+        raise ValueError("checkpoint_strategy must be 'best-per-metric' or 'best-loss'")
 
     append_log(train_log_path, "", reset=True)
     append_log(eval_log_path, "", reset=True)
     if train_log_preamble is not None:
         append_log(train_log_path, f"{train_log_preamble}\n")
+    if checkpoint_strategy == "best-per-metric":
+        checkpoint_limit_warning = (
+            "Warning: --checkpoint-limit is ignored with "
+            "--checkpoint-strategy best-per-metric; one checkpoint per metric "
+            "is retained."
+        )
+        print(checkpoint_limit_warning)
+        append_log(train_log_path, f"{checkpoint_limit_warning}\n")
+        append_log(eval_log_path, f"{checkpoint_limit_warning}\n")
 
     train_loader = data_module.train_dataloader
     if train_loader is None:
@@ -145,11 +165,18 @@ def train_model(
             "Validation DataLoader is not available. Did you call setup()?"
         )
 
-    best_val_loss = float("inf")
+    early_stop_best_loss = float("inf")
+    best_observed_loss = float("inf")
     best_checkpoint_path: str | None = None
+    best_checkpoint_loss: float | None = None
     epochs_without_improvement = 0
     saved_checkpoints: list[dict[str, Any]] = []
     best_by_metric: dict[str, dict[str, Any] | None] = {
+        "loss": None,
+        "accuracy": None,
+        "auroc": None,
+    }
+    best_checkpoint_paths_by_metric: dict[str, str | None] = {
         "loss": None,
         "accuracy": None,
         "auroc": None,
@@ -195,6 +222,9 @@ def train_model(
             "accuracy": val_acc,
             "auroc": val_auroc,
         }
+        observed_loss_improved = val_avg_loss < best_observed_loss
+        if observed_loss_improved:
+            best_observed_loss = val_avg_loss
 
         for metric_name in best_by_metric:
             if _is_metric_improved(
@@ -203,6 +233,43 @@ def train_model(
                 best_by_metric[metric_name],
             ):
                 best_by_metric[metric_name] = epoch_metrics.copy()
+                if checkpoint_strategy == "best-per-metric":
+                    checkpoint_path = save_model(
+                        model,
+                        optimizer,
+                        epoch,
+                        version,
+                        model_name=model_name,
+                        val_loss=val_avg_loss,
+                        val_acc=val_acc,
+                        val_auroc=val_auroc,
+                        tag=f"best-{metric_name}",
+                    )
+                    previous_checkpoint_path = best_checkpoint_paths_by_metric[
+                        metric_name
+                    ]
+                    best_checkpoint_paths_by_metric[metric_name] = checkpoint_path
+                    append_log(
+                        train_log_path,
+                        "Saved best "
+                        f"{_format_metric_label(metric_name)} checkpoint: "
+                        f"{checkpoint_path}\n",
+                    )
+                    if (
+                        previous_checkpoint_path is not None
+                        and previous_checkpoint_path != checkpoint_path
+                        and os.path.exists(previous_checkpoint_path)
+                    ):
+                        os.remove(previous_checkpoint_path)
+                        append_log(
+                            train_log_path,
+                            "Removed previous best "
+                            f"{_format_metric_label(metric_name)} checkpoint: "
+                            f"{previous_checkpoint_path}\n",
+                        )
+                    if metric_name == "loss":
+                        best_checkpoint_path = checkpoint_path
+                        best_checkpoint_loss = val_avg_loss
 
         print(
             f"Validation Loss: {val_avg_loss:.4f}, Accuracy: {val_acc:.4f}, "
@@ -216,12 +283,8 @@ def train_model(
             ),
         )
 
-        improved = val_avg_loss < best_val_loss - min_delta
-        if improved:
-            best_val_loss = val_avg_loss
-            epochs_without_improvement = 0
-
-            if checkpoint_limit == -1 or checkpoint_limit >= 1:
+        if checkpoint_strategy == "best-loss":
+            if observed_loss_improved:
                 checkpoint_path = save_model(
                     model,
                     optimizer,
@@ -230,8 +293,11 @@ def train_model(
                     model_name=model_name,
                     val_loss=val_avg_loss,
                     val_acc=val_acc,
+                    val_auroc=val_auroc,
                 )
                 best_checkpoint_path = checkpoint_path
+                best_checkpoint_loss = val_avg_loss
+                best_checkpoint_paths_by_metric["loss"] = checkpoint_path
                 append_log(
                     train_log_path,
                     (
@@ -259,10 +325,16 @@ def train_model(
                                 train_log_path,
                                 f"Removed checkpoint: {worst_checkpoint['path']}\n",
                             )
+
+        early_stop_improved = val_avg_loss < early_stop_best_loss - min_delta
+        if early_stop_improved:
+            early_stop_best_loss = val_avg_loss
+            epochs_without_improvement = 0
             append_log(
                 eval_log_path,
                 (
-                    f"New best validation loss: {best_val_loss:.4f} "
+                    "New early-stopping validation loss: "
+                    f"{early_stop_best_loss:.4f} "
                     f"at epoch {epoch + 1}\n\n"
                 ),
             )
@@ -273,11 +345,16 @@ def train_model(
                 (
                     f"No validation loss improvement for {epochs_without_improvement} "
                     "epoch(s) "
-                    f"(best={best_val_loss:.4f}, min_delta={min_delta:.1e})\n\n"
+                    f"(best={early_stop_best_loss:.4f}, "
+                    f"min_delta={min_delta:.1e})\n\n"
                 ),
             )
 
-        if checkpoint_limit == -1 and not improved:
+        if (
+            checkpoint_strategy == "best-loss"
+            and checkpoint_limit == -1
+            and not observed_loss_improved
+        ):
             checkpoint_path = save_model(
                 model,
                 optimizer,
@@ -286,6 +363,7 @@ def train_model(
                 model_name=model_name,
                 val_loss=val_avg_loss,
                 val_acc=val_acc,
+                val_auroc=val_auroc,
             )
             append_log(train_log_path, f"Saved checkpoint: {checkpoint_path}\n")
 
@@ -297,7 +375,7 @@ def train_model(
             train_acc=f"{train_acc:.4f}",
             val_avg_loss=f"{val_avg_loss:.4f}",
             val_acc=f"{val_acc:.4f}",
-            best_val_loss=f"{best_val_loss:.4f}",
+            best_val_loss=f"{best_observed_loss:.4f}",
             wait=epochs_without_improvement,
         )
 
@@ -323,7 +401,7 @@ def train_model(
     )
     reload_message = (
         f"Reloaded best checkpoint '{best_checkpoint_path}' "
-        f"(epoch={best_epoch}, val_loss={best_val_loss:.4f})"
+        f"(epoch={best_epoch}, val_loss={_format_metric_value(best_checkpoint_loss)})"
     )
     print(reload_message)
     append_log(train_log_path, f"{reload_message}\n")
@@ -339,5 +417,16 @@ def train_model(
         append_log(train_log_path, f"\n{summary_block}\n")
         append_log(eval_log_path, f"\n{summary_block}\n")
 
+    saved_best_checkpoint_summaries = [
+        f"Best {_format_metric_label(metric_name)} checkpoint: {checkpoint_path}"
+        for metric_name, checkpoint_path in best_checkpoint_paths_by_metric.items()
+        if checkpoint_path is not None
+    ]
+    if saved_best_checkpoint_summaries:
+        summary_block = "\n".join(saved_best_checkpoint_summaries)
+        print(summary_block)
+        append_log(train_log_path, f"\n{summary_block}\n")
+        append_log(eval_log_path, f"\n{summary_block}\n")
+
     print("\nTraining complete.")
-    return model
+    return model, best_checkpoint_paths_by_metric

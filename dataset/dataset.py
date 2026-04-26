@@ -10,15 +10,21 @@ from torch.utils.data import Dataset
 
 class MMHS150KDataset(Dataset):
     def __init__(
-        self, data_root: str, split: str = "train", captions_json: str | None = None
+        self,
+        data_root: str,
+        split: str = "train",
+        captions_json: str | None = None,
+        metadata_filename: str = "MMHS150K_GT.json",
+        use_all_records: bool = False,
     ):
         self._root = Path(data_root)
         self._split = split
         self._image_dir = self._root / "img_resized"
         self._ocr_dir = self._root / "img_txt"
-        self._json_path = self._root / "MMHS150K_GT.json"
-        self._split_ids = self._load_split_ids()
+        self._json_path = self._root / metadata_filename
+        self._use_all_records = use_all_records
         self._data = self._load_metadata()
+        self._record_ids = self._load_record_ids()
         self._captions = None
         if captions_json:
             with open(captions_json, "r", encoding="utf-8") as f:
@@ -29,18 +35,28 @@ class MMHS150KDataset(Dataset):
         with open(split_file, "r") as f:
             return [line.strip() for line in f.readlines()]
 
+    def _load_record_ids(self) -> List[str]:
+        if self._use_all_records:
+            return sorted(self._data.keys())
+
+        split_ids = self._load_split_ids()
+        return [tweet_id for tweet_id in split_ids if tweet_id in self._data]
+
     def _load_metadata(self) -> Dict[str, Dict]:
         with open(self._json_path, "r") as f:
             all_data = json.load(f)
-        # Convert to set for quick lookup
-        split_ids_set = set(self._split_ids)
+        if self._use_all_records:
+            return all_data
+
+        split_ids = self._load_split_ids()
+        split_ids_set = set(split_ids)
         return {k: v for k, v in all_data.items() if k in split_ids_set}
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._record_ids)
 
     def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
-        tweet_id = self._split_ids[idx]
+        tweet_id = self._record_ids[idx]
         sample = self._data[tweet_id]
         tweet_text = sample["tweet_text"]
         image_path = self._image_dir / f"{tweet_id}.jpg"
@@ -89,7 +105,7 @@ class MMHS150KDataset(Dataset):
 
     @property
     def split_ids(self) -> List[str]:
-        return self._split_ids
+        return self._record_ids
 
     @property
     def data(self) -> Dict[str, Dict]:

@@ -20,6 +20,7 @@ def validate_vbert(
     persistent_workers: bool = False,
     load_captions: bool = True,
     max_visual_tokens: int = 16,
+    metadata_file: str = "MMHS150K_GT.json",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -35,6 +36,7 @@ def validate_vbert(
         persistent_workers=persistent_workers,
         load_captions=load_captions,
         num_classes=num_classes,
+        metadata_filename=metadata_file,
     )
     dm.setup()
     val_loader = dm.val_dataloader

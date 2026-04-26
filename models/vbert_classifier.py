@@ -45,16 +45,25 @@ class VisualBERTFeatureExtractor(nn.Module):
 
 class ClassificationHead(nn.Module):
     def __init__(
-        self, input_dim: int, hidden_dim: int = 512, num_classes: int = 2
+        self,
+        input_dim: int,
+        hidden_dims: tuple[int, ...] = (512, 256, 128),
+        num_classes: int = 2,
     ) -> None:
         super(ClassificationHead, self).__init__()
-        self._net = nn.Sequential(
-            nn.LayerNorm(input_dim),
-            nn.Linear(input_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_dim, num_classes),
-        )
+        layers: list[nn.Module] = [nn.LayerNorm(input_dim)]
+        previous_dim = input_dim
+        for hidden_dim in hidden_dims:
+            layers.extend(
+                [
+                    nn.Linear(previous_dim, hidden_dim),
+                    nn.GELU(),
+                    nn.Dropout(0.3),
+                ]
+            )
+            previous_dim = hidden_dim
+        layers.append(nn.Linear(previous_dim, num_classes))
+        self._net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self._net(x)

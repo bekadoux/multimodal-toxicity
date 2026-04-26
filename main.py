@@ -11,6 +11,8 @@ from core.captions import (
 # Keep the default conservative because train/val loaders can both keep worker
 # pools alive during long runs when persistent workers are enabled.
 DEFAULT_NUM_WORKERS = min(4, max(1, (os.cpu_count() or 1) // 2))
+DEFAULT_CLIP_MODEL_NAME = "ViT-L-14"
+DEFAULT_CLIP_PRETRAINED = "datacomp_xl_s13b_b90k"
 
 
 def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
@@ -32,6 +34,14 @@ def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Load image caption JSON if available.",
+    )
+
+
+def add_eval_metadata_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--metadata-file",
+        default="MMHS150K_GT.json",
+        help="MMHS metadata JSON filename. Non-default MMHS files use all records.",
     )
 
 
@@ -71,13 +81,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train_clip_parser.add_argument(
         "--clip-model-name",
-        default="openai/clip-vit-base-patch32",
+        default=DEFAULT_CLIP_MODEL_NAME,
+        help="OpenCLIP model architecture name.",
     )
+    train_clip_parser.add_argument(
+        "--clip-pretrained",
+        default=DEFAULT_CLIP_PRETRAINED,
+        help="OpenCLIP pretrained weights tag or checkpoint path.",
+    )
+    train_clip_parser.add_argument("--weight-decay", type=float, default=1e-3)
     train_clip_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Load image caption JSON if available.",
+    )
+    train_clip_parser.add_argument(
+        "--checkpoint-strategy",
+        choices=["best-per-metric", "best-loss"],
+        default="best-per-metric",
     )
 
     train_vbert_parser = train_subparsers.add_parser(
@@ -117,6 +139,65 @@ def build_parser() -> argparse.ArgumentParser:
         help="Load image caption JSON if available.",
     )
     train_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
+    train_vbert_parser.add_argument("--weight-decay", type=float, default=1e-3)
+    train_vbert_parser.add_argument(
+        "--checkpoint-strategy",
+        choices=["best-per-metric", "best-loss"],
+        default="best-per-metric",
+    )
+
+    train_blip2_parser = train_subparsers.add_parser(
+        "blip2",
+        help="Train BLIP-2 classifier",
+    )
+    train_blip2_parser.add_argument(
+        "data_root", nargs="?", default="./data/hateful_memes/"
+    )
+    train_blip2_parser.add_argument("--model-name", default="BLIP2Classifier")
+    train_blip2_parser.add_argument("--version", default="v1")
+    train_blip2_parser.add_argument("--num-classes", type=int, default=2)
+    train_blip2_parser.add_argument("--batch-size", type=int, default=16)
+    train_blip2_parser.add_argument("--max-epochs", type=int, default=200)
+    train_blip2_parser.add_argument("--patience", type=int, default=15)
+    train_blip2_parser.add_argument("--min-delta", type=float, default=1e-4)
+    train_blip2_parser.add_argument("--checkpoint-limit", type=int, default=3)
+    train_blip2_parser.add_argument("--lr", type=float, default=1e-5)
+    train_blip2_parser.add_argument(
+        "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
+    )
+    train_blip2_parser.add_argument("--prefetch-factor", type=int, default=8)
+    train_blip2_parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    train_blip2_parser.add_argument(
+        "--persistent-workers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    train_blip2_parser.add_argument(
+        "--captions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Load image caption JSON if available.",
+    )
+    train_blip2_parser.add_argument(
+        "--blip2-model-name",
+        default="Salesforce/blip2-itm-vit-g",
+    )
+    train_blip2_parser.add_argument(
+        "--projected-dim",
+        type=int,
+        default=512,
+        help="Hidden width of the downstream BLIP-2 classifier head.",
+    )
+    train_blip2_parser.add_argument("--weight-decay", type=float, default=1e-3)
+    train_blip2_parser.add_argument(
+        "--checkpoint-strategy",
+        choices=["best-per-metric", "best-loss"],
+        default="best-per-metric",
+    )
 
     eval_parser = subparsers.add_parser("eval", help="Run single-checkpoint evaluation")
     eval_subparsers = eval_parser.add_subparsers(dest="model", required=True)
@@ -126,9 +207,16 @@ def build_parser() -> argparse.ArgumentParser:
     eval_clip_parser.add_argument("data_root", nargs="?", default="data/hateful_memes/")
     eval_clip_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_clip_parser)
+    add_eval_metadata_arg(eval_clip_parser)
     eval_clip_parser.add_argument(
         "--clip-model-name",
-        default="openai/clip-vit-base-patch32",
+        default=DEFAULT_CLIP_MODEL_NAME,
+        help="OpenCLIP model architecture name.",
+    )
+    eval_clip_parser.add_argument(
+        "--clip-pretrained",
+        default=DEFAULT_CLIP_PRETRAINED,
+        help="OpenCLIP pretrained weights tag or checkpoint path.",
     )
 
     eval_vbert_parser = eval_subparsers.add_parser("vbert", help="Evaluate VisualBERT")
@@ -138,7 +226,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     eval_vbert_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_vbert_parser)
+    add_eval_metadata_arg(eval_vbert_parser)
     eval_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
+
+    eval_blip2_parser = eval_subparsers.add_parser(
+        "blip2",
+        help="Evaluate BLIP-2 classifier",
+    )
+    eval_blip2_parser.add_argument("checkpoint_path")
+    eval_blip2_parser.add_argument(
+        "data_root", nargs="?", default="data/hateful_memes/"
+    )
+    eval_blip2_parser.add_argument("--num-classes", type=int, default=2)
+    add_shared_dataloader_args(eval_blip2_parser)
+    add_eval_metadata_arg(eval_blip2_parser)
+    eval_blip2_parser.set_defaults(batch_size=16)
+    eval_blip2_parser.add_argument(
+        "--blip2-model-name",
+        default="Salesforce/blip2-itm-vit-g",
+    )
+    eval_blip2_parser.add_argument(
+        "--projected-dim",
+        type=int,
+        default=512,
+        help="Hidden width of the downstream BLIP-2 classifier head.",
+    )
 
     eval_all_parser = subparsers.add_parser(
         "eval-all",
@@ -164,9 +276,16 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    add_eval_metadata_arg(eval_all_parser)
     eval_all_parser.add_argument(
         "--clip-model-name",
-        default="openai/clip-vit-base-patch32",
+        default=DEFAULT_CLIP_MODEL_NAME,
+        help="OpenCLIP model architecture name.",
+    )
+    eval_all_parser.add_argument(
+        "--clip-pretrained",
+        default=DEFAULT_CLIP_PRETRAINED,
+        help="OpenCLIP pretrained weights tag or checkpoint path.",
     )
     eval_all_parser.add_argument(
         "--captions",
@@ -263,6 +382,9 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             clip_model_name=args.clip_model_name,
+            clip_pretrained=args.clip_pretrained,
+            weight_decay=args.weight_decay,
+            checkpoint_strategy=args.checkpoint_strategy,
         )
         return
 
@@ -286,6 +408,34 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             max_visual_tokens=args.max_visual_tokens,
+            weight_decay=args.weight_decay,
+            checkpoint_strategy=args.checkpoint_strategy,
+        )
+        return
+
+    if args.command == "train" and args.model == "blip2":
+        from commands.train_blip2 import train_blip2
+
+        train_blip2(
+            data_root=args.data_root,
+            model_name=args.model_name,
+            version=args.version,
+            num_classes=args.num_classes,
+            batch_size=args.batch_size,
+            max_epochs=args.max_epochs,
+            patience=args.patience,
+            min_delta=args.min_delta,
+            checkpoint_limit=args.checkpoint_limit,
+            lr=args.lr,
+            num_workers=args.num_workers,
+            prefetch_factor=args.prefetch_factor,
+            pin_memory=args.pin_memory,
+            persistent_workers=args.persistent_workers,
+            load_captions=args.captions,
+            blip2_model_name=args.blip2_model_name,
+            projected_dim=args.projected_dim,
+            weight_decay=args.weight_decay,
+            checkpoint_strategy=args.checkpoint_strategy,
         )
         return
 
@@ -303,6 +453,8 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             clip_model_name=args.clip_model_name,
+            clip_pretrained=args.clip_pretrained,
+            metadata_file=args.metadata_file,
         )
         return
 
@@ -320,6 +472,26 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             max_visual_tokens=args.max_visual_tokens,
+            metadata_file=args.metadata_file,
+        )
+        return
+
+    if args.command == "eval" and args.model == "blip2":
+        from commands.eval_blip2 import validate_blip2
+
+        validate_blip2(
+            checkpoint_path=args.checkpoint_path,
+            data_root=args.data_root,
+            num_classes=args.num_classes,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            prefetch_factor=args.prefetch_factor,
+            pin_memory=args.pin_memory,
+            persistent_workers=args.persistent_workers,
+            load_captions=args.captions,
+            blip2_model_name=args.blip2_model_name,
+            projected_dim=args.projected_dim,
+            metadata_file=args.metadata_file,
         )
         return
 
@@ -339,6 +511,8 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             clip_model_name=args.clip_model_name,
+            clip_pretrained=args.clip_pretrained,
+            metadata_file=args.metadata_file,
         )
         return
 

@@ -59,6 +59,9 @@ class MMHSDataModule:
         persistent_workers: bool = False,
         load_captions: bool = True,
         num_classes: int = 6,
+        metadata_filename: str = "MMHS150K_GT.json",
+        use_all_records: bool = False,
+        collate_fn=None,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -68,6 +71,9 @@ class MMHSDataModule:
         self._persistent_workers = persistent_workers
         self._load_captions = load_captions
         self._num_classes = num_classes
+        self._metadata_filename = metadata_filename
+        self._use_all_records = use_all_records
+        self._collate_fn = collate_fn or mmhs_collate_fn
 
         self._train_dataset = None
         self._val_dataset = None
@@ -95,13 +101,25 @@ class MMHSDataModule:
         else:
             print("Captions disabled via CLI flag. Continuing without captions.")
         self._train_dataset = MMHS150KDataset(
-            self._data_root, split="train", captions_json=captions_json
+            self._data_root,
+            split="train",
+            captions_json=captions_json,
+            metadata_filename=self._metadata_filename,
+            use_all_records=self._use_all_records,
         )
         self._val_dataset = MMHS150KDataset(
-            self._data_root, split="val", captions_json=captions_json
+            self._data_root,
+            split="val",
+            captions_json=captions_json,
+            metadata_filename=self._metadata_filename,
+            use_all_records=self._use_all_records,
         )
         self._test_dataset = MMHS150KDataset(
-            self._data_root, split="test", captions_json=captions_json
+            self._data_root,
+            split="test",
+            captions_json=captions_json,
+            metadata_filename=self._metadata_filename,
+            use_all_records=self._use_all_records,
         )
 
     def process_batch(
@@ -140,7 +158,7 @@ class MMHSDataModule:
                 self._train_dataloader = self._build_dataloader(
                     self._train_dataset,
                     shuffle=True,
-                    collate_fn=mmhs_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._train_dataloader
         return None
@@ -152,7 +170,7 @@ class MMHSDataModule:
                 self._val_dataloader = self._build_dataloader(
                     self._val_dataset,
                     shuffle=False,
-                    collate_fn=mmhs_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._val_dataloader
         return None
@@ -164,26 +182,26 @@ class MMHSDataModule:
                 self._test_dataloader = self._build_dataloader(
                     self._test_dataset,
                     shuffle=False,
-                    collate_fn=mmhs_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._test_dataloader
         return None
 
     @property
     def train_dataset(self) -> MMHS150KDataset | None:
-        if self._train_dataset:
+        if self._train_dataset is not None:
             return self._train_dataset
         return None
 
     @property
     def val_dataset(self) -> MMHS150KDataset | None:
-        if self._train_dataset:
+        if self._val_dataset is not None:
             return self._val_dataset
         return None
 
     @property
     def test_dataset(self) -> MMHS150KDataset | None:
-        if self._train_dataset:
+        if self._test_dataset is not None:
             return self._test_dataset
         return None
 
@@ -201,6 +219,7 @@ class HatefulMemesDataModule:
         split_val: str = "dev_seen",
         split_test: str = "test_seen",
         load_captions: bool = True,
+        collate_fn=None,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -212,6 +231,7 @@ class HatefulMemesDataModule:
         self._split_val = split_val
         self._split_test = split_test
         self._load_captions = load_captions
+        self._collate_fn = collate_fn or hateful_memes_collate_fn
 
         self._train_dataset = None
         self._val_dataset = None
@@ -279,7 +299,7 @@ class HatefulMemesDataModule:
                 self._train_dataloader = self._build_dataloader(
                     self._train_dataset,
                     shuffle=True,
-                    collate_fn=hateful_memes_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._train_dataloader
         return None
@@ -291,7 +311,7 @@ class HatefulMemesDataModule:
                 self._val_dataloader = self._build_dataloader(
                     self._val_dataset,
                     shuffle=False,
-                    collate_fn=hateful_memes_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._val_dataloader
         return None
@@ -303,7 +323,7 @@ class HatefulMemesDataModule:
                 self._test_dataloader = self._build_dataloader(
                     self._test_dataset,
                     shuffle=False,
-                    collate_fn=hateful_memes_collate_fn,
+                    collate_fn=self._collate_fn,
                 )
             return self._test_dataloader
         return None
@@ -360,9 +380,15 @@ def build_eval_data_module(
     persistent_workers: bool = False,
     load_captions: bool = True,
     num_classes: int = 2,
+    metadata_filename: str = "MMHS150K_GT.json",
+    collate_fn=None,
 ):
     root = Path(data_root)
-    if (root / "MMHS150K_GT.json").exists():
+    use_all_records = metadata_filename != "MMHS150K_GT.json"
+    if (root / "img_resized").exists():
+        metadata_path = root / metadata_filename
+        if not metadata_path.exists():
+            raise ValueError(f"Missing MMHS metadata file: {metadata_path}")
         return MMHSDataModule(
             data_root=data_root,
             batch_size=batch_size,
@@ -372,6 +398,9 @@ def build_eval_data_module(
             persistent_workers=persistent_workers,
             load_captions=load_captions,
             num_classes=num_classes,
+            metadata_filename=metadata_filename,
+            use_all_records=use_all_records,
+            collate_fn=collate_fn,
         )
 
     return HatefulMemesDataModule(
@@ -382,4 +411,5 @@ def build_eval_data_module(
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
         load_captions=load_captions,
+        collate_fn=collate_fn,
     )
