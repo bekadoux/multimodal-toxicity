@@ -71,6 +71,7 @@ def train_epoch(
     log_path: str = "train_log.txt",
     log_interval: int = 100,
     process_batch=None,
+    gradient_clip_val: float | None = None,
 ) -> Tuple[float, float]:
     model.train()
     running_loss = 0.0
@@ -92,6 +93,8 @@ def train_epoch(
         outputs = model(*inputs)
         loss = criterion(outputs, labels)
         loss.backward()
+        if gradient_clip_val is not None and gradient_clip_val > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
         optimizer.step()
 
         running_loss += loss.item()
@@ -131,6 +134,7 @@ def train_model(
     eval_log_path: str = "eval_log.txt",
     train_log_preamble: str | None = None,
     checkpoint_strategy: str = "best-per-metric",
+    gradient_clip_val: float | None = None,
 ):
     if checkpoint_limit == 0 or checkpoint_limit < -1:
         raise ValueError("checkpoint_limit must be -1 or a positive integer")
@@ -140,6 +144,8 @@ def train_model(
         raise ValueError("max_epochs must be at least 1")
     if checkpoint_strategy not in {"best-per-metric", "best-loss"}:
         raise ValueError("checkpoint_strategy must be 'best-per-metric' or 'best-loss'")
+    if gradient_clip_val is not None and gradient_clip_val < 0:
+        raise ValueError("gradient_clip_val must be non-negative")
 
     append_log(train_log_path, "", reset=True)
     append_log(eval_log_path, "", reset=True)
@@ -193,6 +199,7 @@ def train_model(
             device,
             log_path=train_log_path,
             process_batch=process_batch,
+            gradient_clip_val=gradient_clip_val,
         )
         print(f"Train Loss: {train_loss:.4f}, Accuracy: {train_acc:.4f}")
         append_log(
