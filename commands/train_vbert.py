@@ -5,7 +5,7 @@ from torch import nn, optim
 
 from core.eval import evaluate_best_checkpoints
 from core.train import train_model
-from dataset.datamodule import HatefulMemesDataModule
+from dataset.datamodule import build_train_data_module
 from models.vbert_classifier import VisualBERTClassifier
 
 
@@ -34,7 +34,7 @@ def train_vbert(
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    dm = HatefulMemesDataModule(
+    dm = build_train_data_module(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,

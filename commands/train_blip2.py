@@ -6,7 +6,7 @@ from torch import nn, optim
 
 from core.eval import evaluate_best_checkpoints
 from core.train import train_model
-from dataset.datamodule import HatefulMemesDataModule, to_majority_label
+from dataset.datamodule import build_train_data_module, to_majority_label
 from models.blip2_classifier import Blip2BatchCollator, Blip2Classifier
 
 
@@ -62,7 +62,7 @@ def train_blip2(
 
     collate_fn = Blip2BatchCollator(blip2_model_name)
 
-    dm = HatefulMemesDataModule(
+    dm = build_train_data_module(
         data_root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,

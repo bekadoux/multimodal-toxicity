@@ -8,6 +8,89 @@ import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 
 
+class ImageTextJsonlDataset(Dataset):
+    def __init__(
+        self,
+        data_root: str,
+        split: str = "train",
+        captions_json: str | None = None,
+        image_dir: str = "img",
+    ):
+        self._root = Path(data_root)
+        self._split = split
+        self._image_dir = self._root / image_dir
+        self._jsonl_path = self._root / f"{split}.jsonl"
+        self._data = self._load_metadata()
+        self._captions = None
+        if captions_json:
+            with open(captions_json, "r", encoding="utf-8") as f:
+                self._captions = json.load(f)
+
+    def _resolve_image_path(self, img_filename: str) -> Path:
+        image_path = self._root / img_filename
+        if image_path.exists():
+            return image_path
+        return self._image_dir / Path(img_filename).name
+
+    def _load_metadata(self) -> List[Dict]:
+        if not self._jsonl_path.exists():
+            raise ValueError(f"Missing dataset split file: {self._jsonl_path}")
+
+        data = []
+        with open(self._jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                entry = json.loads(line)
+                image_path = self._resolve_image_path(entry["img"])
+                if not image_path.exists():
+                    print(f"Skipping missing image: {image_path}")
+                    continue
+                data.append(entry)
+        return data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
+        sample = self._data[idx]
+        image_path = self._resolve_image_path(sample["img"])
+
+        image = io.read_image(str(image_path)).float() / 255.0
+        image = TF.convert_image_dtype(image, dtype=torch.float)
+        c, _, _ = image.shape
+        if c == 1:
+            image = image.repeat(3, 1, 1)
+        elif c == 4:
+            image = image[:3, ...]
+
+        combined_text = sample["text"]
+
+        if self._captions is not None:
+            image_key = image_path.relative_to(self._root).as_posix()
+            image_caption = self._captions.get(image_key)
+            if image_caption:
+                combined_text += f"\nIMG_CAPTION: {image_caption}"
+
+        label = sample.get("label")
+        if label is None:
+            label_tensor = torch.tensor(-1, dtype=torch.long)
+        else:
+            label_tensor = torch.tensor(int(label), dtype=torch.long)
+
+        return combined_text, image, label_tensor
+
+    @property
+    def split(self) -> str:
+        return self._split
+
+    @property
+    def image_dir(self) -> Path:
+        return self._image_dir
+
+    @property
+    def data(self) -> List[Dict]:
+        return self._data
+
+
 class MMHS150KDataset(Dataset):
     def __init__(
         self,
@@ -112,78 +195,21 @@ class MMHS150KDataset(Dataset):
         return self._data
 
 
-class HatefulMemesDataset(Dataset):
+class HatefulMemesDataset(ImageTextJsonlDataset):
     def __init__(
         self,
         data_root: str,
         split: str = "train",  # train/dev/test
         captions_json: str | None = None,
     ):
-        self._root = Path(data_root)
-        self._split = split
-        self._image_dir = self._root / "img"
-        self._jsonl_path = self._root / f"{split}.jsonl"
-        self._data = self._load_metadata()
-        self._captions = None
-        if captions_json:
-            with open(captions_json, "r", encoding="utf-8") as f:
-                self._captions = json.load(f)
+        super().__init__(data_root, split=split, captions_json=captions_json)
 
-    def _load_metadata(self) -> List[Dict]:
-        data = []
-        for line in open(self._jsonl_path, "r", encoding="utf-8"):
-            entry = json.loads(line)
-            img_filename = Path(entry["img"]).name
-            image_path = self._image_dir / img_filename
-            if not image_path.exists():
-                print(f"Skipping missing image: {image_path}")
-                continue
-            data.append(entry)
-        return data
 
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
-        sample = self._data[idx]
-        img_filename = sample["img"]
-        image_path = self._image_dir / Path(img_filename).name
-
-        # Read and normalize image
-        image = io.read_image(str(image_path)).float() / 255.0
-        image = TF.convert_image_dtype(image, dtype=torch.float)
-        c, _, _ = image.shape
-        if c == 1:
-            image = image.repeat(3, 1, 1)
-        elif c == 4:
-            image = image[:3, ...]
-
-        text = sample["text"]
-        combined_text = text
-
-        if self._captions is not None:
-            image_key = image_path.relative_to(self._root).as_posix()
-            image_caption = self._captions.get(image_key)
-            if image_caption:
-                combined_text += f"\nIMG_CAPTION: {image_caption}"
-
-        # Label: 0 = not hateful, 1 = hateful
-        label = sample.get("label")
-        if label is None:
-            label_tensor = torch.tensor(-1, dtype=torch.long)
-        else:
-            label_tensor = torch.tensor(label, dtype=torch.long)
-
-        return combined_text, image, label_tensor
-
-    @property
-    def split(self) -> str:
-        return self._split
-
-    @property
-    def image_dir(self) -> Path:
-        return self._image_dir
-
-    @property
-    def data(self) -> List[Dict]:
-        return self._data
+class AggregatedDataset(ImageTextJsonlDataset):
+    def __init__(
+        self,
+        data_root: str,
+        split: str = "train",
+        captions_json: str | None = None,
+    ):
+        super().__init__(data_root, split=split, captions_json=captions_json)

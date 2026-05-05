@@ -5,7 +5,12 @@ import torch
 from torch.utils.data import DataLoader
 
 from core.captions import dataset_caption_file
-from dataset.dataset import HatefulMemesDataset, MMHS150KDataset
+from dataset.dataset import (
+    AggregatedDataset,
+    HatefulMemesDataset,
+    ImageTextJsonlDataset,
+    MMHS150KDataset,
+)
 
 
 def get_dataloader_kwargs(
@@ -206,7 +211,7 @@ class MMHSDataModule:
         return None
 
 
-class HatefulMemesDataModule:
+class BinaryImageTextDataModule:
     def __init__(
         self,
         data_root: str,
@@ -220,6 +225,7 @@ class HatefulMemesDataModule:
         split_test: str = "test_seen",
         load_captions: bool = True,
         collate_fn=None,
+        dataset_cls: type[ImageTextJsonlDataset] = ImageTextJsonlDataset,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -232,6 +238,7 @@ class HatefulMemesDataModule:
         self._split_test = split_test
         self._load_captions = load_captions
         self._collate_fn = collate_fn or hateful_memes_collate_fn
+        self._dataset_cls = dataset_cls
 
         self._train_dataset = None
         self._val_dataset = None
@@ -258,13 +265,13 @@ class HatefulMemesDataModule:
                 )
         else:
             print("Captions disabled via CLI flag. Continuing without captions.")
-        self._train_dataset = HatefulMemesDataset(
+        self._train_dataset = self._dataset_cls(
             self._data_root, split=self._split_train, captions_json=captions_json
         )
-        self._val_dataset = HatefulMemesDataset(
+        self._val_dataset = self._dataset_cls(
             self._data_root, split=self._split_val, captions_json=captions_json
         )
-        self._test_dataset = HatefulMemesDataset(
+        self._test_dataset = self._dataset_cls(
             self._data_root, split=self._split_test, captions_json=captions_json
         )
 
@@ -329,15 +336,15 @@ class HatefulMemesDataModule:
         return None
 
     @property
-    def train_dataset(self) -> HatefulMemesDataset | None:
+    def train_dataset(self) -> ImageTextJsonlDataset | None:
         return self._train_dataset
 
     @property
-    def val_dataset(self) -> HatefulMemesDataset | None:
+    def val_dataset(self) -> ImageTextJsonlDataset | None:
         return self._val_dataset
 
     @property
-    def test_dataset(self) -> HatefulMemesDataset | None:
+    def test_dataset(self) -> ImageTextJsonlDataset | None:
         return self._test_dataset
 
     def get_train_class_weights(
@@ -369,6 +376,130 @@ class HatefulMemesDataModule:
         weights = total / (num_classes * counts.float())
         count_map = {index: int(count.item()) for index, count in enumerate(counts)}
         return weights, count_map
+
+
+class HatefulMemesDataModule(BinaryImageTextDataModule):
+    def __init__(
+        self,
+        data_root: str,
+        batch_size: int = 16,
+        num_workers: int = 0,
+        prefetch_factor: int = 2,
+        pin_memory: bool = False,
+        persistent_workers: bool = False,
+        split_train: str = "train",
+        split_val: str = "dev_seen",
+        split_test: str = "test_seen",
+        load_captions: bool = True,
+        collate_fn=None,
+    ):
+        super().__init__(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            split_train=split_train,
+            split_val=split_val,
+            split_test=split_test,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+            dataset_cls=HatefulMemesDataset,
+        )
+
+
+class AggregatedDataModule(BinaryImageTextDataModule):
+    def __init__(
+        self,
+        data_root: str,
+        batch_size: int = 16,
+        num_workers: int = 0,
+        prefetch_factor: int = 2,
+        pin_memory: bool = False,
+        persistent_workers: bool = False,
+        split_train: str = "train",
+        split_val: str = "val",
+        split_test: str = "test",
+        load_captions: bool = True,
+        collate_fn=None,
+    ):
+        super().__init__(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            split_train=split_train,
+            split_val=split_val,
+            split_test=split_test,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+            dataset_cls=AggregatedDataset,
+        )
+
+
+def _has_jsonl_splits(root: Path, splits: tuple[str, ...]) -> bool:
+    return all((root / f"{split}.jsonl").exists() for split in splits)
+
+
+def _is_aggregated_data_root(root: Path) -> bool:
+    return (
+        (root / "img").exists()
+        and (root / "manifest.json").exists()
+        and _has_jsonl_splits(root, ("train", "val", "test"))
+    )
+
+
+def _is_hateful_memes_data_root(root: Path) -> bool:
+    return (root / "img").exists() and _has_jsonl_splits(
+        root,
+        ("train", "dev_seen", "test_seen"),
+    )
+
+
+def build_train_data_module(
+    data_root: str,
+    batch_size: int = 16,
+    num_workers: int = 0,
+    prefetch_factor: int = 2,
+    pin_memory: bool = False,
+    persistent_workers: bool = False,
+    load_captions: bool = True,
+    collate_fn=None,
+):
+    root = Path(data_root)
+    if _is_aggregated_data_root(root):
+        return AggregatedDataModule(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+        )
+
+    if _is_hateful_memes_data_root(root):
+        return HatefulMemesDataModule(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+        )
+
+    raise ValueError(
+        "Unsupported training dataset root. Expected an aggregated dataset with "
+        "train.jsonl, val.jsonl, test.jsonl, manifest.json, and img/, or a "
+        "Hateful Memes dataset with train.jsonl, dev_seen.jsonl, test_seen.jsonl, "
+        f"and img/: {root}"
+    )
 
 
 def build_eval_data_module(
@@ -403,13 +534,33 @@ def build_eval_data_module(
             collate_fn=collate_fn,
         )
 
-    return HatefulMemesDataModule(
-        data_root=data_root,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        prefetch_factor=prefetch_factor,
-        pin_memory=pin_memory,
-        persistent_workers=persistent_workers,
-        load_captions=load_captions,
-        collate_fn=collate_fn,
+    if _is_aggregated_data_root(root):
+        return AggregatedDataModule(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+        )
+
+    if _is_hateful_memes_data_root(root):
+        return HatefulMemesDataModule(
+            data_root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            load_captions=load_captions,
+            collate_fn=collate_fn,
+        )
+
+    raise ValueError(
+        "Unsupported evaluation dataset root. Expected MMHS150K with img_resized/, "
+        "an aggregated dataset with train.jsonl, val.jsonl, test.jsonl, "
+        "manifest.json, and img/, or a Hateful Memes dataset with train.jsonl, "
+        f"dev_seen.jsonl, test_seen.jsonl, and img/: {root}"
     )
