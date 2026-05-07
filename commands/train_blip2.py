@@ -48,7 +48,7 @@ def train_blip2(
     lr: float = 1e-5,
     num_workers: int = 0,
     prefetch_factor: int = 2,
-    pin_memory: bool = True,
+    pin_memory: bool = False,
     persistent_workers: bool = True,
     load_captions: bool = True,
     blip2_model_name: str = "Salesforce/blip2-itm-vit-g",

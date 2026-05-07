@@ -23,7 +23,7 @@ def train_clip_align(
     lr: float = 1e-4,
     num_workers: int = 0,
     prefetch_factor: int = 2,
-    pin_memory: bool = True,
+    pin_memory: bool = False,
     persistent_workers: bool = True,
     load_captions: bool = True,
     clip_model_name: str = "ViT-L-14",

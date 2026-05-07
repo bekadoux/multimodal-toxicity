@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     train_clip_parser.add_argument(
         "--persistent-workers",
@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_align_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     train_clip_align_parser.add_argument(
         "--persistent-workers",
@@ -194,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_vbert_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     train_vbert_parser.add_argument(
         "--persistent-workers",
@@ -238,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     train_blip2_parser.add_argument(
         "--persistent-workers",
@@ -366,7 +366,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_all_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     eval_all_parser.add_argument(
         "--persistent-workers",
