@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
-    train_clip_parser.add_argument("--prefetch-factor", type=int, default=8)
+    train_clip_parser.add_argument("--prefetch-factor", type=int, default=2)
     train_clip_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
@@ -123,7 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_align_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
-    train_clip_align_parser.add_argument("--prefetch-factor", type=int, default=8)
+    train_clip_align_parser.add_argument("--prefetch-factor", type=int, default=2)
     train_clip_align_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
@@ -190,7 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_vbert_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
-    train_vbert_parser.add_argument("--prefetch-factor", type=int, default=8)
+    train_vbert_parser.add_argument("--prefetch-factor", type=int, default=2)
     train_vbert_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
@@ -234,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
-    train_blip2_parser.add_argument("--prefetch-factor", type=int, default=8)
+    train_blip2_parser.add_argument("--prefetch-factor", type=int, default=2)
     train_blip2_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,
@@ -362,7 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_all_parser.add_argument("--num-classes", type=int, default=2)
     eval_all_parser.add_argument("--batch-size", type=int, default=64)
     eval_all_parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
-    eval_all_parser.add_argument("--prefetch-factor", type=int, default=8)
+    eval_all_parser.add_argument("--prefetch-factor", type=int, default=2)
     eval_all_parser.add_argument(
         "--pin-memory",
         action=argparse.BooleanOptionalAction,

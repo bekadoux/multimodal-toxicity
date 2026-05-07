@@ -21,7 +21,7 @@ def train_clip_align(
     checkpoint_limit: int = 3,
     lr: float = 1e-4,
     num_workers: int = 0,
-    prefetch_factor: int = 8,
+    prefetch_factor: int = 2,
     pin_memory: bool = True,
     persistent_workers: bool = True,
     load_captions: bool = True,
