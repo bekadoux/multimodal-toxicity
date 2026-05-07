@@ -57,7 +57,7 @@ class MMHSDataModule:
     def __init__(
         self,
         data_root: str,
-        batch_size: int = 16,
+        batch_size: int = 64,
         num_workers: int = 0,  # No parallel processing by default for stability
         prefetch_factor: int = 2,  # Default PyTorch prefetch factor by default
         pin_memory: bool = False,  # No pinned memory by default for stability
@@ -215,7 +215,7 @@ class BinaryImageTextDataModule:
     def __init__(
         self,
         data_root: str,
-        batch_size: int = 16,
+        batch_size: int = 64,
         num_workers: int = 0,
         prefetch_factor: int = 2,
         pin_memory: bool = False,
@@ -382,7 +382,7 @@ class HatefulMemesDataModule(BinaryImageTextDataModule):
     def __init__(
         self,
         data_root: str,
-        batch_size: int = 16,
+        batch_size: int = 64,
         num_workers: int = 0,
         prefetch_factor: int = 2,
         pin_memory: bool = False,
@@ -413,7 +413,7 @@ class AggregatedDataModule(BinaryImageTextDataModule):
     def __init__(
         self,
         data_root: str,
-        batch_size: int = 16,
+        batch_size: int = 64,
         num_workers: int = 0,
         prefetch_factor: int = 2,
         pin_memory: bool = False,
@@ -461,7 +461,7 @@ def _is_hateful_memes_data_root(root: Path) -> bool:
 
 def build_train_data_module(
     data_root: str,
-    batch_size: int = 16,
+    batch_size: int = 64,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     pin_memory: bool = False,
@@ -504,7 +504,7 @@ def build_train_data_module(
 
 def build_eval_data_module(
     data_root: str,
-    batch_size: int = 16,
+    batch_size: int = 64,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     pin_memory: bool = False,

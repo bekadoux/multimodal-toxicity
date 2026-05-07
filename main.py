@@ -16,7 +16,7 @@ DEFAULT_CLIP_PRETRAINED = "datacomp_xl_s13b_b90k"
 
 
 def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
     parser.add_argument("--prefetch-factor", type=int, default=2)
     parser.add_argument(
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_parser.add_argument("--model-name", default="CLIPClassifier")
     train_clip_parser.add_argument("--version", default="v1")
     train_clip_parser.add_argument("--num-classes", type=int, default=2)
-    train_clip_parser.add_argument("--batch-size", type=int, default=16)
+    train_clip_parser.add_argument("--batch-size", type=int, default=64)
     train_clip_parser.add_argument("--max-epochs", type=int, default=200)
     train_clip_parser.add_argument("--patience", type=int, default=15)
     train_clip_parser.add_argument("--min-delta", type=float, default=1e-4)
@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train_clip_align_parser.add_argument("--version", default="v1")
     train_clip_align_parser.add_argument("--num-classes", type=int, default=2)
-    train_clip_align_parser.add_argument("--batch-size", type=int, default=16)
+    train_clip_align_parser.add_argument("--batch-size", type=int, default=64)
     train_clip_align_parser.add_argument("--max-epochs", type=int, default=200)
     train_clip_align_parser.add_argument("--patience", type=int, default=15)
     train_clip_align_parser.add_argument("--min-delta", type=float, default=1e-4)
@@ -181,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_vbert_parser.add_argument("--model-name", default="VisualBERT")
     train_vbert_parser.add_argument("--version", default="v1")
     train_vbert_parser.add_argument("--num-classes", type=int, default=2)
-    train_vbert_parser.add_argument("--batch-size", type=int, default=16)
+    train_vbert_parser.add_argument("--batch-size", type=int, default=64)
     train_vbert_parser.add_argument("--max-epochs", type=int, default=200)
     train_vbert_parser.add_argument("--patience", type=int, default=15)
     train_vbert_parser.add_argument("--min-delta", type=float, default=1e-4)
@@ -225,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_parser.add_argument("--model-name", default="BLIP2Classifier")
     train_blip2_parser.add_argument("--version", default="v1")
     train_blip2_parser.add_argument("--num-classes", type=int, default=2)
-    train_blip2_parser.add_argument("--batch-size", type=int, default=16)
+    train_blip2_parser.add_argument("--batch-size", type=int, default=64)
     train_blip2_parser.add_argument("--max-epochs", type=int, default=200)
     train_blip2_parser.add_argument("--patience", type=int, default=15)
     train_blip2_parser.add_argument("--min-delta", type=float, default=1e-4)
@@ -337,7 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_blip2_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_blip2_parser)
     add_eval_metadata_arg(eval_blip2_parser)
-    eval_blip2_parser.set_defaults(batch_size=16)
+    eval_blip2_parser.set_defaults(batch_size=64)
     eval_blip2_parser.add_argument(
         "--blip2-model-name",
         default="Salesforce/blip2-itm-vit-g",
@@ -360,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_all_parser.add_argument("--model-name", default="CLIPClassifier")
     eval_all_parser.add_argument("--version", default="v1")
     eval_all_parser.add_argument("--num-classes", type=int, default=2)
-    eval_all_parser.add_argument("--batch-size", type=int, default=16)
+    eval_all_parser.add_argument("--batch-size", type=int, default=64)
     eval_all_parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
     eval_all_parser.add_argument("--prefetch-factor", type=int, default=8)
     eval_all_parser.add_argument(

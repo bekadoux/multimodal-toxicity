@@ -39,7 +39,7 @@ def train_blip2(
     model_name: str = "BLIP2Classifier",
     version: str = "v1",
     num_classes: int = 2,
-    batch_size: int = 16,
+    batch_size: int = 64,
     max_epochs: int = 200,
     patience: int = 15,
     min_delta: float = 1e-4,

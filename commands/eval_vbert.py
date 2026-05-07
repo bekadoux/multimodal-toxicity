@@ -13,7 +13,7 @@ def validate_vbert(
     checkpoint_path: str,
     data_root: str,
     num_classes: int = 2,
-    batch_size: int = 32,
+    batch_size: int = 64,
     prefetch_factor: int = 2,
     num_workers: int = 0,
     pin_memory: bool = False,

@@ -38,7 +38,7 @@ def validate_blip2(
     checkpoint_path: str,
     data_root: str,
     num_classes: int = 2,
-    batch_size: int = 16,
+    batch_size: int = 64,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     pin_memory: bool = False,
