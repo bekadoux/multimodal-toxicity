@@ -45,6 +45,22 @@ def add_eval_metadata_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_eval_selection_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--split",
+        dest="eval_split",
+        choices=["val", "test"],
+        default="val",
+        help="Dataset split to evaluate. Defaults to validation.",
+    )
+    parser.add_argument(
+        "--source",
+        choices=["hateful_memes", "pridemm"],
+        default=None,
+        help="Filter an aggregated dataset by source.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Multimodal toxicity CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -277,6 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_clip_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_clip_parser)
     add_eval_metadata_arg(eval_clip_parser)
+    add_eval_selection_args(eval_clip_parser)
     eval_clip_parser.add_argument(
         "--clip-model-name",
         default=DEFAULT_CLIP_MODEL_NAME,
@@ -299,6 +316,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_clip_align_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_clip_align_parser)
     add_eval_metadata_arg(eval_clip_align_parser)
+    add_eval_selection_args(eval_clip_align_parser)
     eval_clip_align_parser.add_argument(
         "--clip-model-name",
         default=DEFAULT_CLIP_MODEL_NAME,
@@ -324,6 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_vbert_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_vbert_parser)
     add_eval_metadata_arg(eval_vbert_parser)
+    add_eval_selection_args(eval_vbert_parser)
     eval_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
 
     eval_blip2_parser = eval_subparsers.add_parser(
@@ -337,6 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_blip2_parser.add_argument("--num-classes", type=int, default=2)
     add_shared_dataloader_args(eval_blip2_parser)
     add_eval_metadata_arg(eval_blip2_parser)
+    add_eval_selection_args(eval_blip2_parser)
     eval_blip2_parser.set_defaults(batch_size=64)
     eval_blip2_parser.add_argument(
         "--blip2-model-name",
@@ -374,6 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
     )
     add_eval_metadata_arg(eval_all_parser)
+    add_eval_selection_args(eval_all_parser)
     eval_all_parser.add_argument(
         "--clip-model-name",
         default=DEFAULT_CLIP_MODEL_NAME,
@@ -585,6 +606,8 @@ def main() -> None:
             clip_model_name=args.clip_model_name,
             clip_pretrained=args.clip_pretrained,
             metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
         )
         return
 
@@ -610,6 +633,8 @@ def main() -> None:
             fusion_dropout=args.fusion_dropout,
             pre_output_dropout=args.pre_output_dropout,
             metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
         )
         return
 
@@ -628,6 +653,8 @@ def main() -> None:
             load_captions=args.captions,
             max_visual_tokens=args.max_visual_tokens,
             metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
         )
         return
 
@@ -647,6 +674,8 @@ def main() -> None:
             blip2_model_name=args.blip2_model_name,
             projected_dim=args.projected_dim,
             metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
         )
         return
 
@@ -668,6 +697,8 @@ def main() -> None:
             clip_model_name=args.clip_model_name,
             clip_pretrained=args.clip_pretrained,
             metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
         )
         return
 

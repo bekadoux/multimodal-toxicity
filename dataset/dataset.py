@@ -211,5 +211,18 @@ class AggregatedDataset(ImageTextJsonlDataset):
         data_root: str,
         split: str = "train",
         captions_json: str | None = None,
+        source: str | None = None,
     ):
+        self._source = source
         super().__init__(data_root, split=split, captions_json=captions_json)
+
+    def _load_metadata(self) -> List[Dict]:
+        data = super()._load_metadata()
+        if self._source is None:
+            return data
+        filtered = [entry for entry in data if entry.get("source") == self._source]
+        if not filtered:
+            raise ValueError(
+                f"No {self._source!r} records found in split file: {self._jsonl_path}"
+            )
+        return filtered

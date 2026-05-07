@@ -226,6 +226,7 @@ class BinaryImageTextDataModule:
         load_captions: bool = True,
         collate_fn=None,
         dataset_cls: type[ImageTextJsonlDataset] = ImageTextJsonlDataset,
+        dataset_kwargs: dict | None = None,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -239,6 +240,7 @@ class BinaryImageTextDataModule:
         self._load_captions = load_captions
         self._collate_fn = collate_fn or hateful_memes_collate_fn
         self._dataset_cls = dataset_cls
+        self._dataset_kwargs = dataset_kwargs or {}
 
         self._train_dataset = None
         self._val_dataset = None
@@ -266,13 +268,22 @@ class BinaryImageTextDataModule:
         else:
             print("Captions disabled via CLI flag. Continuing without captions.")
         self._train_dataset = self._dataset_cls(
-            self._data_root, split=self._split_train, captions_json=captions_json
+            self._data_root,
+            split=self._split_train,
+            captions_json=captions_json,
+            **self._dataset_kwargs,
         )
         self._val_dataset = self._dataset_cls(
-            self._data_root, split=self._split_val, captions_json=captions_json
+            self._data_root,
+            split=self._split_val,
+            captions_json=captions_json,
+            **self._dataset_kwargs,
         )
         self._test_dataset = self._dataset_cls(
-            self._data_root, split=self._split_test, captions_json=captions_json
+            self._data_root,
+            split=self._split_test,
+            captions_json=captions_json,
+            **self._dataset_kwargs,
         )
 
     def process_batch(
@@ -423,6 +434,7 @@ class AggregatedDataModule(BinaryImageTextDataModule):
         split_test: str = "test",
         load_captions: bool = True,
         collate_fn=None,
+        source: str | None = None,
     ):
         super().__init__(
             data_root=data_root,
@@ -437,6 +449,7 @@ class AggregatedDataModule(BinaryImageTextDataModule):
             load_captions=load_captions,
             collate_fn=collate_fn,
             dataset_cls=AggregatedDataset,
+            dataset_kwargs={"source": source},
         )
 
 
@@ -512,9 +525,13 @@ def build_eval_data_module(
     load_captions: bool = True,
     num_classes: int = 2,
     metadata_filename: str = "MMHS150K_GT.json",
+    source: str | None = None,
     collate_fn=None,
 ):
     root = Path(data_root)
+    if source is not None and not _is_aggregated_data_root(root):
+        raise ValueError("--source is only supported for aggregated dataset roots")
+
     use_all_records = metadata_filename != "MMHS150K_GT.json"
     if (root / "img_resized").exists():
         metadata_path = root / metadata_filename
@@ -535,6 +552,12 @@ def build_eval_data_module(
         )
 
     if _is_aggregated_data_root(root):
+        allowed_sources = {"hateful_memes", "pridemm"}
+        if source is not None and source not in allowed_sources:
+            raise ValueError(
+                f"Unsupported aggregated source {source!r}; expected one of "
+                f"{sorted(allowed_sources)}"
+            )
         return AggregatedDataModule(
             data_root=data_root,
             batch_size=batch_size,
@@ -544,6 +567,7 @@ def build_eval_data_module(
             persistent_workers=persistent_workers,
             load_captions=load_captions,
             collate_fn=collate_fn,
+            source=source,
         )
 
     if _is_hateful_memes_data_root(root):

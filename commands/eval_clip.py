@@ -3,6 +3,7 @@ import os
 import torch
 from torch import nn
 
+from commands.eval_utils import select_eval_dataloader
 from core.eval import append_log, evaluate
 from core.io import load_model
 from core.logs import build_log_path, make_run_timestamp
@@ -23,6 +24,8 @@ def validate_clip(
     clip_model_name: str = "ViT-L-14",
     clip_pretrained: str = "datacomp_xl_s13b_b90k",
     metadata_file: str = "MMHS150K_GT.json",
+    eval_split: str = "val",
+    source: str | None = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -45,13 +48,10 @@ def validate_clip(
         load_captions=load_captions,
         num_classes=num_classes,
         metadata_filename=metadata_file,
+        source=source,
     )
     dm.setup()
-    val_loader = dm.val_dataloader
-    if val_loader is None:
-        raise ValueError(
-            "Validation DataLoader is not available. Did you call setup()?"
-        )
+    eval_loader, split_label = select_eval_dataloader(dm, eval_split)
 
     model = CLIPClassifier(
         num_classes=num_classes,
@@ -70,7 +70,7 @@ def validate_clip(
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
     val_metrics = evaluate(
         model,
-        val_loader,
+        eval_loader,
         criterion,
         device,
         process_batch=dm.process_batch,
@@ -80,13 +80,13 @@ def validate_clip(
         "N/A" if val_metrics["auroc"] is None else f"{val_metrics['auroc']:.4f}"
     )
     print(
-        f"Validation Results - Loss: {val_metrics['loss']:.4f}, "
+        f"{split_label} Results - Loss: {val_metrics['loss']:.4f}, "
         f"Accuracy: {val_metrics['accuracy']:.4f}, AUROC: {val_auroc_str}"
     )
     append_log(
         eval_log_path,
         (
-            f"Validation Results - Loss: {val_metrics['loss']:.4f}, "
+            f"{split_label} Results - Loss: {val_metrics['loss']:.4f}, "
             f"Accuracy: {val_metrics['accuracy']:.4f}, "
             f"AUROC: {val_auroc_str}\n"
         ),

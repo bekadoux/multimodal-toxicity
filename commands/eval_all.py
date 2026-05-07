@@ -3,6 +3,7 @@ import os
 import torch
 from torch import nn
 
+from commands.eval_utils import select_eval_dataloader
 from core.eval import append_log, evaluate
 from core.io import load_model
 from core.logs import build_log_path, make_run_timestamp
@@ -40,6 +41,8 @@ def evaluate_all_checkpoints(
     clip_model_name: str = "ViT-L-14",
     clip_pretrained: str = "datacomp_xl_s13b_b90k",
     metadata_file: str = "MMHS150K_GT.json",
+    eval_split: str = "val",
+    source: str | None = None,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -62,13 +65,10 @@ def evaluate_all_checkpoints(
         load_captions=load_captions,
         num_classes=num_classes,
         metadata_filename=metadata_file,
+        source=source,
     )
     dm.setup()
-    val_loader = dm.val_dataloader
-    if val_loader is None:
-        raise ValueError(
-            "Validation DataLoader is not available. Did you call setup()?"
-        )
+    eval_loader, split_label = select_eval_dataloader(dm, eval_split)
 
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
 
@@ -99,7 +99,7 @@ def evaluate_all_checkpoints(
         )
         metrics = evaluate(
             model,
-            val_loader,
+            eval_loader,
             criterion,
             device,
             process_batch=dm.process_batch,
@@ -117,14 +117,15 @@ def evaluate_all_checkpoints(
         auroc_str = "N/A" if metrics["auroc"] is None else f"{metrics['auroc']:.4f}"
         print(
             f"[{os.path.basename(ckpt_path)}] Epoch {epoch}: "
-            f"Val Loss: {metrics['loss']:.4f}, Accuracy: {metrics['accuracy']:.4f}, "
+            f"{split_label} Loss: {metrics['loss']:.4f}, "
+            f"Accuracy: {metrics['accuracy']:.4f}, "
             f"AUROC: {auroc_str}"
         )
         append_log(
             eval_log_path,
             (
                 f"[{os.path.basename(ckpt_path)}] Epoch {epoch}: "
-                f"Val Loss: {metrics['loss']:.4f}, "
+                f"{split_label} Loss: {metrics['loss']:.4f}, "
                 f"Accuracy: {metrics['accuracy']:.4f}, AUROC: {auroc_str}\n"
             ),
         )
