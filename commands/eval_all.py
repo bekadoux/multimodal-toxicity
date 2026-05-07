@@ -3,8 +3,9 @@ import os
 import torch
 from torch import nn
 
-from core.eval import evaluate
+from core.eval import append_log, evaluate
 from core.io import load_model
+from core.logs import build_log_path, make_run_timestamp
 from dataset.datamodule import build_eval_data_module
 from models.clip_classifier import CLIPClassifier
 
@@ -42,6 +43,12 @@ def evaluate_all_checkpoints(
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    eval_log_path = build_log_path(
+        model_name,
+        "eval-all",
+        timestamp=make_run_timestamp(),
+    )
+    print(f"Evaluation log: {eval_log_path}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -71,6 +78,7 @@ def evaluate_all_checkpoints(
         return
 
     print(f"Found {len(ckpt_paths)} checkpoints.")
+    append_log(eval_log_path, f"Found {len(ckpt_paths)} checkpoints.\n")
     results: list[dict[str, float | int | str]] = []
 
     for ckpt_path in ckpt_paths:
@@ -86,12 +94,16 @@ def evaluate_all_checkpoints(
             map_location=device,
         )
         print(f"\nEvaluating checkpoint: {ckpt_path} (epoch={epoch})")
+        append_log(
+            eval_log_path, f"\nEvaluating checkpoint: {ckpt_path} (epoch={epoch})\n"
+        )
         metrics = evaluate(
             model,
             val_loader,
             criterion,
             device,
             process_batch=dm.process_batch,
+            log_path=eval_log_path,
         )
         results.append(
             {
@@ -108,16 +120,42 @@ def evaluate_all_checkpoints(
             f"Val Loss: {metrics['loss']:.4f}, Accuracy: {metrics['accuracy']:.4f}, "
             f"AUROC: {auroc_str}"
         )
+        append_log(
+            eval_log_path,
+            (
+                f"[{os.path.basename(ckpt_path)}] Epoch {epoch}: "
+                f"Val Loss: {metrics['loss']:.4f}, "
+                f"Accuracy: {metrics['accuracy']:.4f}, AUROC: {auroc_str}\n"
+            ),
+        )
 
     print("\n\n========= SUMMARY OF ALL CHECKPOINTS =========")
     print(
         f"{'Checkpoint':<30} {'Epoch':<5} {'Loss':<10} {'Accuracy':<10} {'AUROC':<10}"
     )
     print("-" * 70)
+    append_log(
+        eval_log_path,
+        (
+            "\n\n========= SUMMARY OF ALL CHECKPOINTS =========\n"
+            f"{'Checkpoint':<30} {'Epoch':<5} {'Loss':<10} "
+            f"{'Accuracy':<10} {'AUROC':<10}\n"
+            f"{'-' * 70}\n"
+        ),
+    )
     for result in results:
         auroc_str = "N/A" if result["auroc"] is None else f"{result['auroc']:.4f}"
         print(
             f"{result['filename']:<30} {result['epoch']:<5} {result['loss']:<10.4f} "
             f"{result['accuracy']:<10.4f} {auroc_str:<10}"
         )
+        append_log(
+            eval_log_path,
+            (
+                f"{result['filename']:<30} {result['epoch']:<5} "
+                f"{result['loss']:<10.4f} {result['accuracy']:<10.4f} "
+                f"{auroc_str:<10}\n"
+            ),
+        )
     print("=" * 70)
+    append_log(eval_log_path, f"{'=' * 70}\n")

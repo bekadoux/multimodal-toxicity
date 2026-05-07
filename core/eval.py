@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Callable, List
 
 import torch
@@ -9,10 +10,12 @@ from tqdm import tqdm
 from .io import load_model
 
 
-def append_log(log_path: str | None, content: str) -> None:
+def append_log(log_path: str | Path | None, content: str) -> None:
     if log_path is None:
         return
-    with open(log_path, "a", encoding="utf-8") as log_file:
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
         log_file.write(content)
 
 
@@ -38,7 +41,7 @@ def evaluate(
     criterion: nn.Module,
     device: torch.device,
     process_batch=None,
-    log_path: str | None = None,
+    log_path: str | Path | None = None,
 ) -> dict[str, Any]:
     model.eval()
     running_loss = 0.0
@@ -133,6 +136,7 @@ def evaluate_best_checkpoints(
     criterion: nn.Module,
     device: torch.device,
     process_batch,
+    log_path: str | Path | None = None,
 ) -> None:
     metric_labels = {
         "loss": "loss",
@@ -155,16 +159,32 @@ def evaluate_best_checkpoints(
             f"\nTest evaluation for best {metric_labels[metric_name]} checkpoint: "
             f"{checkpoint_path}"
         )
+        append_log(
+            log_path,
+            (
+                f"Test evaluation for best {metric_labels[metric_name]} checkpoint: "
+                f"{checkpoint_path}\n"
+            ),
+        )
         metrics = evaluate(
             model,
             dataloader,
             criterion,
             device,
             process_batch=process_batch,
+            log_path=log_path,
         )
         auroc_str = "N/A" if metrics["auroc"] is None else f"{metrics['auroc']:.4f}"
         print(
             f"Test Loss: {metrics['loss']:.4f}, "
             f"Accuracy: {metrics['accuracy']:.4f}, "
             f"AUROC: {auroc_str}"
+        )
+        append_log(
+            log_path,
+            (
+                f"Test Loss: {metrics['loss']:.4f}, "
+                f"Accuracy: {metrics['accuracy']:.4f}, "
+                f"AUROC: {auroc_str}\n\n"
+            ),
         )

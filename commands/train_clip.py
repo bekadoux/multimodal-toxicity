@@ -4,6 +4,7 @@ import torch
 from torch import nn, optim
 
 from core.eval import evaluate_best_checkpoints
+from core.logs import build_log_path, make_run_timestamp
 from core.train import train_model
 from dataset.datamodule import build_train_data_module
 from models.clip_classifier import CLIPClassifier
@@ -66,6 +67,10 @@ def train_clip(
         lr=lr,
         weight_decay=weight_decay,
     )
+    log_timestamp = make_run_timestamp()
+    train_log_path = build_log_path(model_name, "train", timestamp=log_timestamp)
+    val_log_path = build_log_path(model_name, "val", timestamp=log_timestamp)
+    test_log_path = build_log_path(model_name, "test", timestamp=log_timestamp)
 
     _, best_checkpoint_paths_by_metric = train_model(
         model=model,
@@ -80,6 +85,8 @@ def train_clip(
         version=version,
         model_name=model_name,
         process_batch=dm.process_batch,
+        train_log_path=train_log_path,
+        eval_log_path=val_log_path,
         train_log_preamble=class_weight_message,
         checkpoint_strategy=checkpoint_strategy,
     )
@@ -97,4 +104,5 @@ def train_clip(
             criterion=criterion,
             device=device,
             process_batch=dm.process_batch,
+            log_path=test_log_path,
         )

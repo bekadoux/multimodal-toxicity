@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any, Tuple
 
 import torch
@@ -8,12 +9,18 @@ from tqdm import tqdm
 
 from .eval import evaluate
 from .io import load_model, save_model
+from .logs import build_log_path, make_run_timestamp
 
 
-def append_log(log_path: str, content: str, reset: bool = False) -> None:
-    if reset and os.path.exists(log_path):
-        os.remove(log_path)
-    with open(log_path, "a", encoding="utf-8") as log_file:
+def append_log(log_path: str | Path | None, content: str, reset: bool = False) -> None:
+    if log_path is None:
+        return
+
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if reset and log_path.exists():
+        log_path.unlink()
+    with log_path.open("a", encoding="utf-8") as log_file:
         log_file.write(content)
 
 
@@ -68,7 +75,7 @@ def train_epoch(
     criterion: nn.Module,
     optimizer: optim.Optimizer,
     device: torch.device,
-    log_path: str = "train_log.txt",
+    log_path: str | Path | None = None,
     log_interval: int = 100,
     process_batch=None,
     gradient_clip_val: float | None = None,
@@ -130,8 +137,8 @@ def train_model(
     version: str = "v1",
     model_name: str = "model",
     process_batch=None,
-    train_log_path: str = "train_log.txt",
-    eval_log_path: str = "eval_log.txt",
+    train_log_path: str | Path | None = None,
+    eval_log_path: str | Path | None = None,
     train_log_preamble: str | None = None,
     checkpoint_strategy: str = "best-per-metric",
     gradient_clip_val: float | None = None,
@@ -146,6 +153,24 @@ def train_model(
         raise ValueError("checkpoint_strategy must be 'best-per-metric' or 'best-loss'")
     if gradient_clip_val is not None and gradient_clip_val < 0:
         raise ValueError("gradient_clip_val must be non-negative")
+
+    if train_log_path is None or eval_log_path is None:
+        log_timestamp = make_run_timestamp()
+        if train_log_path is None:
+            train_log_path = build_log_path(
+                model_name,
+                "train",
+                timestamp=log_timestamp,
+            )
+        if eval_log_path is None:
+            eval_log_path = build_log_path(
+                model_name,
+                "val",
+                timestamp=log_timestamp,
+            )
+
+    print(f"Training log: {train_log_path}")
+    print(f"Validation log: {eval_log_path}")
 
     append_log(train_log_path, "", reset=True)
     append_log(eval_log_path, "", reset=True)

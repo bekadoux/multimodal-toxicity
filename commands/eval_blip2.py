@@ -4,8 +4,9 @@ from typing import Any
 import torch
 from torch import nn
 
-from core.eval import evaluate
+from core.eval import append_log, evaluate
 from core.io import load_model
+from core.logs import build_log_path, make_run_timestamp
 from dataset.datamodule import build_eval_data_module, to_majority_label
 from models.blip2_classifier import Blip2BatchCollator, Blip2Classifier
 
@@ -50,6 +51,12 @@ def validate_blip2(
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    eval_log_path = build_log_path(
+        "BLIP2Classifier",
+        "eval",
+        timestamp=make_run_timestamp(),
+    )
+    print(f"Evaluation log: {eval_log_path}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -88,6 +95,7 @@ def validate_blip2(
         map_location=device,
     )
     print(f"Loaded checkpoint '{checkpoint_path}'")
+    append_log(eval_log_path, f"Loaded checkpoint '{checkpoint_path}'\n")
 
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
     val_metrics = evaluate(
@@ -100,6 +108,7 @@ def validate_blip2(
             dev,
             num_classes,
         ),
+        log_path=eval_log_path,
     )
     val_auroc_str = (
         "N/A" if val_metrics["auroc"] is None else f"{val_metrics['auroc']:.4f}"
@@ -107,4 +116,12 @@ def validate_blip2(
     print(
         f"Validation Results - Loss: {val_metrics['loss']:.4f}, "
         f"Accuracy: {val_metrics['accuracy']:.4f}, AUROC: {val_auroc_str}"
+    )
+    append_log(
+        eval_log_path,
+        (
+            f"Validation Results - Loss: {val_metrics['loss']:.4f}, "
+            f"Accuracy: {val_metrics['accuracy']:.4f}, "
+            f"AUROC: {val_auroc_str}\n"
+        ),
     )

@@ -180,5 +180,7 @@ cython_debug/
 /ckpt/*
 !/ckpt/.gitkeep
 
+/reports/logs/
+
 # ignore .txt files (usually logs)
 *.txt

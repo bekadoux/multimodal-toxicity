@@ -5,6 +5,7 @@ import torch
 from torch import nn, optim
 
 from core.eval import evaluate_best_checkpoints
+from core.logs import build_log_path, make_run_timestamp
 from core.train import train_model
 from dataset.datamodule import build_train_data_module, to_majority_label
 from models.blip2_classifier import Blip2BatchCollator, Blip2Classifier
@@ -97,6 +98,10 @@ def train_blip2(
         lr=lr,
         weight_decay=weight_decay,
     )
+    log_timestamp = make_run_timestamp()
+    train_log_path = build_log_path(model_name, "train", timestamp=log_timestamp)
+    val_log_path = build_log_path(model_name, "val", timestamp=log_timestamp)
+    test_log_path = build_log_path(model_name, "test", timestamp=log_timestamp)
 
     _, best_checkpoint_paths_by_metric = train_model(
         model=model,
@@ -115,6 +120,8 @@ def train_blip2(
             dev,
             num_classes,
         ),
+        train_log_path=train_log_path,
+        eval_log_path=val_log_path,
         train_log_preamble=class_weight_message,
         checkpoint_strategy=checkpoint_strategy,
     )
@@ -137,4 +144,5 @@ def train_blip2(
                 dev,
                 num_classes,
             ),
+            log_path=test_log_path,
         )
