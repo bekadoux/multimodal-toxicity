@@ -91,6 +91,10 @@ def require_text(value: object, *, context: str) -> str:
     return value
 
 
+def normalize_text_for_overlap(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
 def load_hateful_records(
     data_root: Path,
     source_split: str,
@@ -197,22 +201,74 @@ def load_pridemm_records(
 def collect_source_records(
     hateful_root: Path,
     pridemm_root: Path,
-) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "train": [
-            *load_hateful_records(hateful_root, "train"),
-            *load_hateful_records(hateful_root, "test_unseen"),
-            *load_pridemm_records(pridemm_root, "train"),
-        ],
-        "val": [
-            *load_hateful_records(hateful_root, "dev_seen"),
-            *load_pridemm_records(pridemm_root, "val"),
-        ],
-        "test": [
-            *load_hateful_records(hateful_root, "test_seen"),
-            *load_pridemm_records(pridemm_root, "test"),
-        ],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    hateful_train = load_hateful_records(hateful_root, "train")
+    hateful_test_unseen = load_hateful_records(hateful_root, "test_unseen")
+    pridemm_train = load_pridemm_records(pridemm_root, "train")
+    val_records = [
+        *load_hateful_records(hateful_root, "dev_seen"),
+        *load_pridemm_records(pridemm_root, "val"),
+    ]
+    test_records = [
+        *load_hateful_records(hateful_root, "test_seen"),
+        *load_pridemm_records(pridemm_root, "test"),
+    ]
+
+    kept_test_unseen, decontamination = decontaminate_hateful_test_unseen(
+        hateful_test_unseen,
+        holdout_records=[*val_records, *test_records],
+    )
+
+    return (
+        {
+            "train": [
+                *hateful_train,
+                *kept_test_unseen,
+                *pridemm_train,
+            ],
+            "val": val_records,
+            "test": test_records,
+        },
+        decontamination,
+    )
+
+
+def decontaminate_hateful_test_unseen(
+    test_unseen_records: list[dict[str, Any]],
+    *,
+    holdout_records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    holdout_text_keys = {
+        key
+        for record in holdout_records
+        if (key := normalize_text_for_overlap(record["text"]))
     }
+
+    kept_records = []
+    removed_records = []
+    for record in test_unseen_records:
+        text_key = normalize_text_for_overlap(record["text"])
+        if text_key and text_key in holdout_text_keys:
+            removed_records.append(record)
+        else:
+            kept_records.append(record)
+
+    summary = {
+        "policy": (
+            "Only Hateful Memes test_unseen records added to the aggregated "
+            "training split are removed when normalized text overlaps the "
+            "aggregated validation or test split. Other training sources and "
+            "all validation/test records are left unchanged."
+        ),
+        "normalization": "casefold, strip, collapse whitespace",
+        "filtered_source_split": "hateful_memes:test_unseen",
+        "holdout_splits": ["val", "test"],
+        "holdout_unique_texts": len(holdout_text_keys),
+        "before": summarize_split(test_unseen_records),
+        "kept": summarize_split(kept_records),
+        "removed": summarize_split(removed_records),
+    }
+    return kept_records, summary
 
 
 def build_records(
@@ -296,6 +352,7 @@ def build_manifest(
     *,
     hateful_root: Path,
     pridemm_root: Path,
+    decontamination: dict[str, Any],
 ) -> dict[str, Any]:
     split_summaries = {split: summarize_split(split_records[split]) for split in SPLITS}
     total_records = sum(summary["total"] for summary in split_summaries.values())
@@ -329,6 +386,7 @@ def build_manifest(
             "Sequential synthetic filenames are assigned in split/source order. "
             "Original image paths are stored in index.jsonl."
         ),
+        "decontamination": decontamination,
         "splits": split_summaries,
     }
 
@@ -396,6 +454,15 @@ def print_summary(
             f"{split}: total={summary['total']} "
             f"labels={summary['by_label']} sources={summary['by_source']}"
         )
+    decontamination = manifest["decontamination"]
+    removed = decontamination["removed"]
+    kept = decontamination["kept"]
+    print(
+        "decontamination: "
+        f"filtered={decontamination['filtered_source_split']} "
+        f"removed={removed['total']} kept={kept['total']} "
+        f"removed_labels={removed['by_label']} kept_labels={kept['by_label']}"
+    )
 
 
 def main() -> int:
@@ -404,7 +471,10 @@ def main() -> int:
     pridemm_root = Path(args.pridemm_root)
     output_root = Path(args.output_root)
 
-    source_records_by_split = collect_source_records(hateful_root, pridemm_root)
+    source_records_by_split, decontamination = collect_source_records(
+        hateful_root,
+        pridemm_root,
+    )
     split_records, index_records, copy_plan = build_records(
         source_records_by_split,
         output_root,
@@ -413,6 +483,7 @@ def main() -> int:
         split_records,
         hateful_root=hateful_root,
         pridemm_root=pridemm_root,
+        decontamination=decontamination,
     )
 
     if not args.dry_run:
