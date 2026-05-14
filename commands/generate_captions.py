@@ -16,12 +16,25 @@ from core.captions import (
     image_key_for_path,
     is_image_file,
 )
+from core.logs import build_log_path
 
-logging.basicConfig(
-    filename="caption_generation.log",
-    level=logging.ERROR,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+LOGGER_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+
+
+def _configure_caption_logger(data_root: Path) -> tuple[logging.Logger, Path]:
+    dataset_name = data_root.name.lower().replace(" ", "_")
+    log_path = build_log_path(dataset_name, "caption")
+    logger = logging.getLogger(f"caption_generation.{log_path.stem}")
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers.clear()
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(LOGGER_FORMAT))
+    logger.addHandler(handler)
+    return logger, log_path
 
 
 def _load_caption_progress(progress_path: Path) -> dict[str, str]:
@@ -102,6 +115,17 @@ def _missing_caption_keys(image_keys: list[str], captions: dict[str, str]) -> li
     return [key for key in image_keys if not captions.get(key, "").strip()]
 
 
+def _incomplete_generation_message(missing_keys: list[str]) -> str:
+    preview = ", ".join(missing_keys[:10])
+    if len(missing_keys) > 10:
+        preview += ", ..."
+    return (
+        "Caption generation incomplete: "
+        f"{len(missing_keys)} images are still missing captions. "
+        f"First missing keys: {preview}"
+    )
+
+
 def generate_image_captions(
     data_root: str,
     image_dir: str | None = None,
@@ -128,6 +152,8 @@ def generate_image_captions(
     )
     output_jsonl = output_json.with_suffix(".jsonl")
     debug_jsonl = output_json.with_suffix(".responses.jsonl")
+    logger, log_path = _configure_caption_logger(data_root_path)
+    print(f"Caption generation errors will be logged to: {log_path}")
 
     images = _discover_images(data_root_path, image_dir)
     if max_images is not None:
@@ -169,9 +195,9 @@ def generate_image_captions(
         except CaptionResponseError as exc:
             if debug_responses:
                 _append_debug_response(debug_jsonl, image_key, exc.response_payload)
-            logging.error("Error processing %s: %s", image_key, exc)
+            logger.error("Error processing %s: %s", image_key, exc)
         except Exception as exc:
-            logging.error("Error processing %s: %s", image_key, exc)
+            logger.exception("Error processing %s: %s", image_key, exc)
 
     missing_keys = _missing_caption_keys(image_keys, captions)
     if missing_keys:
@@ -188,16 +214,15 @@ def generate_image_captions(
             except CaptionResponseError as exc:
                 if debug_responses:
                     _append_debug_response(debug_jsonl, image_key, exc.response_payload)
-                logging.error("Retry failed for %s: %s", image_key, exc)
+                logger.error("Retry failed for %s: %s", image_key, exc)
             except Exception as exc:
-                logging.error("Retry failed for %s: %s", image_key, exc)
+                logger.exception("Retry failed for %s: %s", image_key, exc)
 
     missing_keys = _missing_caption_keys(image_keys, captions)
     if missing_keys:
-        raise RuntimeError(
-            "Caption generation incomplete: "
-            f"{len(missing_keys)} images are still missing captions"
-        )
+        message = _incomplete_generation_message(missing_keys)
+        logger.error(message)
+        raise RuntimeError(message)
 
     _write_captions_json(output_json, captions)
     if output_jsonl.exists():

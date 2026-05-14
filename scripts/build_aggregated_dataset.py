@@ -8,10 +8,13 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_HATEFUL_ROOT = Path("data/hateful_memes")
 DEFAULT_PRIDEMM_ROOT = Path("data/PrideMM")
 DEFAULT_OUTPUT_ROOT = Path("data/aggregated")
+CAPTIONS_DIR = REPO_ROOT / "captions"
 SPLITS = ("train", "val", "test")
+SOURCES = ("hateful_memes", "pridemm")
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +75,31 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 
     with path.open("r", encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
+
+
+def dataset_caption_file(data_root: str | Path, suffix: str = ".json") -> Path:
+    dataset_name = Path(data_root).resolve().name.lower().replace(" ", "_")
+    return CAPTIONS_DIR / f"{dataset_name}_captions{suffix}"
+
+
+def load_caption_json(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    with path.open("r", encoding="utf-8") as f:
+        captions = json.load(f)
+
+    if not isinstance(captions, dict):
+        raise ValueError(f"Caption file must contain a JSON object: {path}")
+
+    normalized_captions = {}
+    for key, value in captions.items():
+        if not isinstance(value, str):
+            raise ValueError(f"Caption value for {key!r} is not a string in {path}")
+        caption = value.strip()
+        if caption:
+            normalized_captions[str(key)] = caption
+    return normalized_captions
 
 
 def parse_binary_label(value: object, *, context: str) -> int:
@@ -319,6 +347,63 @@ def build_records(
     return split_records, index_records, copy_plan
 
 
+def load_source_captions(
+    *,
+    hateful_root: Path,
+    pridemm_root: Path,
+) -> tuple[dict[str, dict[str, str]], dict[str, Path]]:
+    caption_paths = {
+        "hateful_memes": dataset_caption_file(hateful_root),
+        "pridemm": dataset_caption_file(pridemm_root),
+    }
+    source_captions = {
+        source: load_caption_json(caption_paths[source]) for source in SOURCES
+    }
+    return source_captions, caption_paths
+
+
+def build_aggregated_captions(
+    index_records: list[dict[str, Any]],
+    source_captions: dict[str, dict[str, str]],
+    caption_paths: dict[str, Path],
+) -> tuple[dict[str, str], dict[str, Any]]:
+    aggregate_captions = {}
+    by_source = {
+        source: {
+            "caption_file": str(caption_paths[source]),
+            "caption_file_found": caption_paths[source].exists(),
+            "source_captions": len(source_captions[source]),
+            "records": 0,
+            "matched": 0,
+            "missing": 0,
+        }
+        for source in SOURCES
+    }
+
+    for record in index_records:
+        source = record["source"]
+        source_image = record["source_image"]
+        by_source[source]["records"] += 1
+
+        caption = source_captions.get(source, {}).get(source_image)
+        if caption:
+            aggregate_captions[record["img"]] = caption
+            by_source[source]["matched"] += 1
+        else:
+            by_source[source]["missing"] += 1
+
+    return aggregate_captions, {
+        "output_path": str(dataset_caption_file(DEFAULT_OUTPUT_ROOT)),
+        "total": len(index_records),
+        "matched": len(aggregate_captions),
+        "missing": len(index_records) - len(aggregate_captions),
+        "source_files_found": sum(
+            1 for source in SOURCES if by_source[source]["caption_file_found"]
+        ),
+        "by_source": by_source,
+    }
+
+
 def counter_as_dict(counter: Counter) -> dict[str, int]:
     return {str(key): counter[key] for key in sorted(counter)}
 
@@ -419,6 +504,31 @@ def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def write_caption_json(
+    path: Path, captions: dict[str, str], *, overwrite: bool
+) -> None:
+    if path.exists() and not overwrite:
+        raise ValueError(f"Caption file already exists, pass --overwrite: {path}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(dict(sorted(captions.items())), f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    tmp_path.replace(path)
+
+
+def should_write_caption_json(summary: dict[str, Any]) -> bool:
+    return summary["source_files_found"] > 0
+
+
+def validate_caption_output(
+    path: Path, summary: dict[str, Any], *, overwrite: bool
+) -> None:
+    if should_write_caption_json(summary) and path.exists() and not overwrite:
+        raise ValueError(f"Caption file already exists, pass --overwrite: {path}")
+
+
 def write_dataset(
     output_root: Path,
     split_records: dict[str, list[dict[str, Any]]],
@@ -444,6 +554,7 @@ def print_summary(
     *,
     output_root: Path,
     dry_run: bool,
+    caption_summary: dict[str, Any],
 ) -> None:
     action = "Dry run complete" if dry_run else "Aggregated dataset written"
     print(f"{action}: {output_root}")
@@ -463,6 +574,22 @@ def print_summary(
         f"removed={removed['total']} kept={kept['total']} "
         f"removed_labels={removed['by_label']} kept_labels={kept['by_label']}"
     )
+    print(
+        "captions: "
+        f"output={caption_summary['output_path']} "
+        f"matched={caption_summary['matched']} "
+        f"missing={caption_summary['missing']}"
+    )
+    for source in SOURCES:
+        source_summary = caption_summary["by_source"][source]
+        status = "found" if source_summary["caption_file_found"] else "missing"
+        print(
+            f"captions[{source}]: file={status} "
+            f"source_captions={source_summary['source_captions']} "
+            f"records={source_summary['records']} "
+            f"matched={source_summary['matched']} "
+            f"missing={source_summary['missing']}"
+        )
 
 
 def main() -> int:
@@ -479,6 +606,17 @@ def main() -> int:
         source_records_by_split,
         output_root,
     )
+    source_captions, caption_paths = load_source_captions(
+        hateful_root=hateful_root,
+        pridemm_root=pridemm_root,
+    )
+    aggregate_captions, caption_summary = build_aggregated_captions(
+        index_records,
+        source_captions,
+        caption_paths,
+    )
+    caption_output_path = dataset_caption_file(output_root)
+    caption_summary["output_path"] = str(caption_output_path)
     manifest = build_manifest(
         split_records,
         hateful_root=hateful_root,
@@ -487,6 +625,11 @@ def main() -> int:
     )
 
     if not args.dry_run:
+        validate_caption_output(
+            caption_output_path,
+            caption_summary,
+            overwrite=args.overwrite,
+        )
         prepare_output_root(
             output_root,
             hateful_root=hateful_root,
@@ -494,8 +637,19 @@ def main() -> int:
             overwrite=args.overwrite,
         )
         write_dataset(output_root, split_records, index_records, copy_plan, manifest)
+        if should_write_caption_json(caption_summary):
+            write_caption_json(
+                caption_output_path,
+                aggregate_captions,
+                overwrite=args.overwrite,
+            )
 
-    print_summary(manifest, output_root=output_root, dry_run=args.dry_run)
+    print_summary(
+        manifest,
+        output_root=output_root,
+        dry_run=args.dry_run,
+        caption_summary=caption_summary,
+    )
     return 0
 
 

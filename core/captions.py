@@ -1,9 +1,11 @@
 import base64
 import json
-import mimetypes
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+
+from PIL import Image, UnidentifiedImageError
 
 DEFAULT_CAPTION_PROMPT = (
     "Task: Produce a concise, factual caption of the image for research use.\n\n"
@@ -30,6 +32,10 @@ DEFAULT_REQUEST_MODEL = "llama.cpp"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CAPTIONS_DIR = REPO_ROOT / "captions"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+LLAMA_SUPPORTED_IMAGE_FORMATS = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+}
 
 # Recommended defaults for Qwen3.5 when used with reasoning enabled.
 DEFAULT_TEMPERATURE = 0.6
@@ -122,11 +128,7 @@ class LlamaCppCaptionClient:
         ) from last_error
 
     def _build_payload(self, image_path: Path) -> dict[str, Any]:
-        image_bytes = image_path.read_bytes()
-        mime_type, _ = mimetypes.guess_type(image_path.name)
-        if mime_type is None:
-            mime_type = "application/octet-stream"
-        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        image_url = self._build_image_data_url(image_path)
 
         payload: dict[str, Any] = {
             "model": DEFAULT_REQUEST_MODEL,
@@ -139,7 +141,7 @@ class LlamaCppCaptionClient:
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:{mime_type};base64,{image_b64}",
+                                "url": image_url,
                             },
                         },
                     ],
@@ -157,6 +159,44 @@ class LlamaCppCaptionClient:
         if self._seed is not None:
             payload["seed"] = self._seed
         return payload
+
+    def _build_image_data_url(self, image_path: Path) -> str:
+        image_bytes = image_path.read_bytes()
+        mime_type = self._detect_supported_mime_type(image_bytes)
+        if mime_type is None:
+            image_bytes = self._convert_image_to_png_bytes(image_bytes)
+            mime_type = "image/png"
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        return f"data:{mime_type};base64,{image_b64}"
+
+    @staticmethod
+    def _detect_supported_mime_type(image_bytes: bytes) -> str | None:
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                image_format = (image.format or "").upper()
+        except (OSError, UnidentifiedImageError):
+            return None
+
+        return LLAMA_SUPPORTED_IMAGE_FORMATS.get(image_format)
+
+    @staticmethod
+    def _convert_image_to_png_bytes(image_bytes: bytes) -> bytes:
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+                    image = image.convert("RGBA")
+                    background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+                    background.alpha_composite(image)
+                    image = background.convert("RGB")
+                else:
+                    image = image.convert("RGB")
+
+                buffer = BytesIO()
+                image.save(buffer, format="PNG")
+                return buffer.getvalue()
+        except (OSError, UnidentifiedImageError) as exc:
+            raise ValueError("Unable to decode image bytes") from exc
 
     @staticmethod
     def _extract_caption(response_payload: dict[str, Any]) -> str:
