@@ -38,7 +38,6 @@ def process_blip2_batch(
 def train_blip2(
     data_root: str,
     model_name: str = "BLIP2Classifier",
-    version: str = "v1",
     num_classes: int = 2,
     batch_size: int = 64,
     max_epochs: int = 200,
@@ -113,7 +112,6 @@ def train_blip2(
         patience=patience,
         min_delta=min_delta,
         checkpoint_limit=checkpoint_limit,
-        version=version,
         model_name=model_name,
         process_batch=lambda batch, dev: process_blip2_batch(
             batch,

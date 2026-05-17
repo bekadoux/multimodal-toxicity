@@ -1,30 +1,50 @@
-import os
+from datetime import datetime
+from pathlib import Path
 from typing import Optional, Tuple
 
 import torch
 from torch import nn, optim
 
 
+def make_checkpoint_run_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M")
+
+
+def create_checkpoint_run_dir(
+    model_name: str,
+    checkpoint_root: str | Path = "ckpt",
+    timestamp: str | None = None,
+) -> Path:
+    timestamp = timestamp or make_checkpoint_run_timestamp()
+    checkpoint_dir = Path(checkpoint_root) / model_name / timestamp
+    try:
+        checkpoint_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        raise FileExistsError(
+            f"Checkpoint run directory already exists: {checkpoint_dir}. "
+            "Start a new run after the minute changes or remove the existing "
+            "directory."
+        ) from exc
+    return checkpoint_dir
+
+
 def save_model(
     model: nn.Module,
     optimizer: optim.Optimizer,
     epoch: int,
-    version: str,
-    model_name: str,
-    save_dir: str = "ckpt",
+    checkpoint_dir: str | Path,
     val_loss: float | None = None,
     val_acc: float | None = None,
     val_auroc: float | None = None,
     tag: str | None = None,
 ) -> str:
-    # Creates a subdirectory within save_dir for structure
-    model_dir = os.path.join(save_dir, model_name)
-    os.makedirs(model_dir, exist_ok=True)
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = f"{version}_epoch{epoch + 1}.pt"
+    filename = f"epoch{epoch + 1}.pt"
     if tag is not None:
-        filename = f"{version}_{tag}_epoch{epoch + 1}.pt"
-    filepath = os.path.join(model_dir, filename)
+        filename = f"{tag}_epoch{epoch + 1}.pt"
+    filepath = checkpoint_dir / filename
 
     checkpoint = {
         "epoch": epoch,
@@ -39,7 +59,7 @@ def save_model(
         checkpoint["val_auroc"] = val_auroc
 
     torch.save(checkpoint, filepath)
-    return filepath
+    return str(filepath)
 
 
 def load_model(

@@ -73,7 +73,6 @@ def build_parser() -> argparse.ArgumentParser:
         "data_root", nargs="?", default="./data/hateful_memes/"
     )
     train_clip_parser.add_argument("--model-name", default="CLIPClassifier")
-    train_clip_parser.add_argument("--version", default="v1")
     train_clip_parser.add_argument("--num-classes", type=int, default=2)
     train_clip_parser.add_argument("--batch-size", type=int, default=64)
     train_clip_parser.add_argument("--max-epochs", type=int, default=200)
@@ -128,7 +127,6 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_align_parser.add_argument(
         "--model-name", default="CLIPAlignFusionClassifier"
     )
-    train_clip_align_parser.add_argument("--version", default="v1")
     train_clip_align_parser.add_argument("--num-classes", type=int, default=2)
     train_clip_align_parser.add_argument("--batch-size", type=int, default=64)
     train_clip_align_parser.add_argument("--max-epochs", type=int, default=200)
@@ -195,7 +193,6 @@ def build_parser() -> argparse.ArgumentParser:
         "data_root", nargs="?", default="./data/hateful_memes/"
     )
     train_vbert_parser.add_argument("--model-name", default="VisualBERT")
-    train_vbert_parser.add_argument("--version", default="v1")
     train_vbert_parser.add_argument("--num-classes", type=int, default=2)
     train_vbert_parser.add_argument("--batch-size", type=int, default=64)
     train_vbert_parser.add_argument("--max-epochs", type=int, default=200)
@@ -239,7 +236,6 @@ def build_parser() -> argparse.ArgumentParser:
         "data_root", nargs="?", default="./data/hateful_memes/"
     )
     train_blip2_parser.add_argument("--model-name", default="BLIP2Classifier")
-    train_blip2_parser.add_argument("--version", default="v1")
     train_blip2_parser.add_argument("--num-classes", type=int, default=2)
     train_blip2_parser.add_argument("--batch-size", type=int, default=64)
     train_blip2_parser.add_argument("--max-epochs", type=int, default=200)
@@ -443,7 +439,6 @@ def main() -> None:
         train_clip(
             data_root=args.data_root,
             model_name=args.model_name,
-            version=args.version,
             num_classes=args.num_classes,
             batch_size=args.batch_size,
             max_epochs=args.max_epochs,
@@ -469,7 +464,6 @@ def main() -> None:
         train_clip_align(
             data_root=args.data_root,
             model_name=args.model_name,
-            version=args.version,
             num_classes=args.num_classes,
             batch_size=args.batch_size,
             max_epochs=args.max_epochs,
@@ -502,7 +496,6 @@ def main() -> None:
         train_vbert(
             data_root=args.data_root,
             model_name=args.model_name,
-            version=args.version,
             num_classes=args.num_classes,
             batch_size=args.batch_size,
             max_epochs=args.max_epochs,
@@ -527,7 +520,6 @@ def main() -> None:
         train_blip2(
             data_root=args.data_root,
             model_name=args.model_name,
-            version=args.version,
             num_classes=args.num_classes,
             batch_size=args.batch_size,
             max_epochs=args.max_epochs,

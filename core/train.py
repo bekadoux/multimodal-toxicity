@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .eval import evaluate
-from .io import load_model, save_model
+from .io import create_checkpoint_run_dir, load_model, save_model
 from .logs import build_log_path, make_run_timestamp
 
 
@@ -134,7 +134,6 @@ def train_model(
     patience: int = 15,
     min_delta: float = 1e-4,
     checkpoint_limit: int = 3,
-    version: str = "v1",
     model_name: str = "model",
     process_batch=None,
     train_log_path: str | Path | None = None,
@@ -169,13 +168,17 @@ def train_model(
                 timestamp=log_timestamp,
             )
 
+    checkpoint_dir = create_checkpoint_run_dir(model_name)
+
     print(f"Training log: {train_log_path}")
     print(f"Validation log: {eval_log_path}")
+    print(f"Checkpoint directory: {checkpoint_dir}")
 
     append_log(train_log_path, "", reset=True)
     append_log(eval_log_path, "", reset=True)
     if train_log_preamble is not None:
         append_log(train_log_path, f"{train_log_preamble}\n")
+    append_log(train_log_path, f"Checkpoint directory: {checkpoint_dir}\n")
     if checkpoint_strategy == "best-per-metric":
         checkpoint_limit_warning = (
             "Warning: --checkpoint-limit is ignored with "
@@ -270,8 +273,7 @@ def train_model(
                         model,
                         optimizer,
                         epoch,
-                        version,
-                        model_name=model_name,
+                        checkpoint_dir,
                         val_loss=val_avg_loss,
                         val_acc=val_acc,
                         val_auroc=val_auroc,
@@ -321,8 +323,7 @@ def train_model(
                     model,
                     optimizer,
                     epoch,
-                    version,
-                    model_name=model_name,
+                    checkpoint_dir,
                     val_loss=val_avg_loss,
                     val_acc=val_acc,
                     val_auroc=val_auroc,
@@ -391,8 +392,7 @@ def train_model(
                 model,
                 optimizer,
                 epoch,
-                version,
-                model_name=model_name,
+                checkpoint_dir,
                 val_loss=val_avg_loss,
                 val_acc=val_acc,
                 val_auroc=val_auroc,

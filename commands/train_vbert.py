@@ -13,7 +13,6 @@ from models.vbert_classifier import VisualBERTClassifier
 def train_vbert(
     data_root: str,
     model_name: str = "VisualBERT",
-    version: str = "v1",
     num_classes: int = 2,
     batch_size: int = 64,
     max_epochs: int = 200,
@@ -80,7 +79,6 @@ def train_vbert(
         patience=patience,
         min_delta=min_delta,
         checkpoint_limit=checkpoint_limit,
-        version=version,
         model_name=model_name,
         process_batch=dm.process_batch,
         train_log_path=train_log_path,
