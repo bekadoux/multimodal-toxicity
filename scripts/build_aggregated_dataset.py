@@ -8,13 +8,21 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from PIL import Image, UnidentifiedImageError
+from tqdm import tqdm
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_HATEFUL_ROOT = Path("data/hateful_memes")
 DEFAULT_PRIDEMM_ROOT = Path("data/PrideMM")
 DEFAULT_OUTPUT_ROOT = Path("data/aggregated")
+DEFAULT_PRIDEMM_MAX_PIXELS = 2_000_000
 CAPTIONS_DIR = REPO_ROOT / "captions"
 SPLITS = ("train", "val", "test")
 SOURCES = ("hateful_memes", "pridemm")
+
+
+def print_step(message: str) -> None:
+    print(f"[build_aggregated_dataset] {message}", flush=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +57,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Validate inputs and print the planned summary without writing files.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--pridemm-max-pixels",
+        type=int,
+        default=DEFAULT_PRIDEMM_MAX_PIXELS,
+        help=(
+            "Resize PrideMM images above this total pixel count while preserving "
+            "aspect ratio. Pass 0 to disable PrideMM resizing."
+        ),
+    )
+
+    args = parser.parse_args()
+    if args.pridemm_max_pixels < 0:
+        parser.error("--pridemm-max-pixels must be >= 0")
+    return args
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -305,7 +326,7 @@ def build_records(
 ) -> tuple[
     dict[str, list[dict[str, Any]]],
     list[dict[str, Any]],
-    list[tuple[Path, Path]],
+    list[dict[str, Any]],
 ]:
     split_records: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
     index_records = []
@@ -341,7 +362,13 @@ def build_records(
 
             split_records[split].append(training_record)
             index_records.append(index_record)
-            copy_plan.append((source_image_path, output_root / image_rel))
+            copy_plan.append(
+                {
+                    "source_path": source_image_path,
+                    "destination_path": output_root / image_rel,
+                    "source": source_record["source"],
+                }
+            )
             next_index += 1
 
     return split_records, index_records, copy_plan
@@ -438,6 +465,7 @@ def build_manifest(
     hateful_root: Path,
     pridemm_root: Path,
     decontamination: dict[str, Any],
+    image_resize: dict[str, Any],
 ) -> dict[str, Any]:
     split_summaries = {split: summarize_split(split_records[split]) for split in SPLITS}
     total_records = sum(summary["total"] for summary in split_summaries.values())
@@ -471,6 +499,7 @@ def build_manifest(
             "Sequential synthetic filenames are assigned in split/source order. "
             "Original image paths are stored in index.jsonl."
         ),
+        "image_resize": image_resize,
         "decontamination": decontamination,
         "splits": split_summaries,
     }
@@ -529,16 +558,238 @@ def validate_caption_output(
         raise ValueError(f"Caption file already exists, pass --overwrite: {path}")
 
 
+def resized_dimensions(
+    width: int,
+    height: int,
+    *,
+    max_pixels: int,
+) -> tuple[int, int]:
+    source_pixels = width * height
+    if max_pixels <= 0 or source_pixels <= max_pixels:
+        return width, height
+
+    scale = (max_pixels / source_pixels) ** 0.5
+    target_width = max(1, int(width * scale))
+    target_height = max(1, int(height * scale))
+
+    if target_width * target_height > max_pixels:
+        if target_width >= target_height:
+            target_width = max(1, max_pixels // target_height)
+        else:
+            target_height = max(1, max_pixels // target_width)
+
+    return target_width, target_height
+
+
+def read_image_size(path: Path) -> tuple[int, int]:
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError(f"Could not read image dimensions: {path}") from exc
+
+
+def image_resize_record(
+    path: Path,
+    width: int,
+    height: int,
+    target_width: int,
+    target_height: int,
+) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "width": width,
+        "height": height,
+        "pixels": width * height,
+        "target_width": target_width,
+        "target_height": target_height,
+        "target_pixels": target_width * target_height,
+    }
+
+
+def image_resize_metadata(
+    width: int,
+    height: int,
+    target_width: int,
+    target_height: int,
+) -> dict[str, Any]:
+    return {
+        "width": width,
+        "height": height,
+        "target_width": target_width,
+        "target_height": target_height,
+        "will_resize": (target_width, target_height) != (width, height),
+    }
+
+
+def build_image_resize_summary(
+    copy_plan: list[dict[str, Any]],
+    *,
+    pridemm_max_pixels: int,
+) -> dict[str, Any]:
+    eligible_images = sum(1 for task in copy_plan if task["source"] == "pridemm")
+    summary: dict[str, Any] = {
+        "policy": {
+            "source": "pridemm",
+            "max_pixels": pridemm_max_pixels,
+            "disabled": pridemm_max_pixels == 0,
+            "aspect_ratio_preserved": True,
+            "resampling": "Pillow LANCZOS",
+        },
+        "total_images": len(copy_plan),
+        "eligible_images": eligible_images,
+        "resized_images": 0,
+        "unchanged_eligible_images": eligible_images,
+        "max_source_pixels": None,
+        "max_output_pixels": None,
+        "largest_source_image": None,
+        "largest_resized_image": None,
+    }
+    if pridemm_max_pixels == 0:
+        return summary
+
+    pridemm_tasks = [task for task in copy_plan if task["source"] == "pridemm"]
+    max_source_pixels = 0
+    max_output_pixels = 0
+    largest_source_image = None
+    largest_resized_image = None
+
+    for task in tqdm(
+        pridemm_tasks,
+        desc="Scanning PrideMM image sizes",
+        unit="image",
+        dynamic_ncols=True,
+    ):
+        source_path = task["source_path"]
+        width, height = read_image_size(source_path)
+        target_width, target_height = resized_dimensions(
+            width,
+            height,
+            max_pixels=pridemm_max_pixels,
+        )
+        task["image_resize"] = image_resize_metadata(
+            width,
+            height,
+            target_width,
+            target_height,
+        )
+        source_pixels = width * height
+        output_pixels = target_width * target_height
+
+        if source_pixels > max_source_pixels:
+            max_source_pixels = source_pixels
+            largest_source_image = image_resize_record(
+                source_path,
+                width,
+                height,
+                target_width,
+                target_height,
+            )
+        if output_pixels > max_output_pixels:
+            max_output_pixels = output_pixels
+
+        if (target_width, target_height) != (width, height):
+            summary["resized_images"] += 1
+            if (
+                largest_resized_image is None
+                or source_pixels > largest_resized_image["pixels"]
+            ):
+                largest_resized_image = image_resize_record(
+                    source_path,
+                    width,
+                    height,
+                    target_width,
+                    target_height,
+                )
+
+    summary["unchanged_eligible_images"] = eligible_images - summary["resized_images"]
+    summary["max_source_pixels"] = max_source_pixels or None
+    summary["max_output_pixels"] = max_output_pixels or None
+    summary["largest_source_image"] = largest_source_image
+    summary["largest_resized_image"] = largest_resized_image
+    return summary
+
+
+def copy_or_resize_image(
+    task: dict[str, Any],
+    *,
+    pridemm_max_pixels: int,
+) -> None:
+    source_path = task["source_path"]
+    destination_path = task["destination_path"]
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if task["source"] != "pridemm" or pridemm_max_pixels == 0:
+        shutil.copy2(source_path, destination_path)
+        return
+
+    resize_info = task.get("image_resize")
+    if resize_info is not None and not resize_info["will_resize"]:
+        shutil.copy2(source_path, destination_path)
+        return
+
+    try:
+        with Image.open(source_path) as image:
+            if resize_info is None:
+                width, height = image.size
+                target_size = resized_dimensions(
+                    width,
+                    height,
+                    max_pixels=pridemm_max_pixels,
+                )
+            else:
+                width = resize_info["width"]
+                height = resize_info["height"]
+                target_size = (
+                    resize_info["target_width"],
+                    resize_info["target_height"],
+                )
+            if target_size == (width, height):
+                shutil.copy2(source_path, destination_path)
+                return
+
+            image_format = image.format
+            resized = image.resize(target_size, Image.Resampling.LANCZOS)
+            save_kwargs = {}
+            if image_format:
+                save_kwargs["format"] = image_format
+            resized.save(destination_path, **save_kwargs)
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError(f"Could not resize PrideMM image: {source_path}") from exc
+
+
+def image_write_status(task: dict[str, Any]) -> str:
+    source_path = task["source_path"]
+    resize_info = task.get("image_resize")
+    if resize_info is not None and resize_info["will_resize"]:
+        return (
+            f"resizing {source_path.name} "
+            f"{resize_info['width']}x{resize_info['height']} -> "
+            f"{resize_info['target_width']}x{resize_info['target_height']}"
+        )
+    if task["source"] == "pridemm":
+        return f"copying PrideMM {source_path.name}"
+    return f"copying {task['source']}"
+
+
 def write_dataset(
     output_root: Path,
     split_records: dict[str, list[dict[str, Any]]],
     index_records: list[dict[str, Any]],
-    copy_plan: list[tuple[Path, Path]],
+    copy_plan: list[dict[str, Any]],
     manifest: dict[str, Any],
+    *,
+    pridemm_max_pixels: int,
 ) -> None:
-    for source_path, destination_path in copy_plan:
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, destination_path)
+    progress = tqdm(
+        copy_plan,
+        desc="Writing aggregated images",
+        unit="image",
+        dynamic_ncols=True,
+    )
+    for task in progress:
+        progress.set_postfix_str(image_write_status(task), refresh=True)
+        copy_or_resize_image(task, pridemm_max_pixels=pridemm_max_pixels)
 
     for split in SPLITS:
         write_jsonl(output_root / f"{split}.jsonl", split_records[split])
@@ -574,6 +825,19 @@ def print_summary(
         f"removed={removed['total']} kept={kept['total']} "
         f"removed_labels={removed['by_label']} kept_labels={kept['by_label']}"
     )
+    image_resize = manifest["image_resize"]
+    resize_policy = image_resize["policy"]
+    resize_status = "disabled" if resize_policy["disabled"] else "enabled"
+    print(
+        "image_resize: "
+        f"source={resize_policy['source']} "
+        f"status={resize_status} "
+        f"max_pixels={resize_policy['max_pixels']} "
+        f"resized={image_resize['resized_images']} "
+        f"eligible={image_resize['eligible_images']} "
+        f"max_source_pixels={image_resize['max_source_pixels']} "
+        f"max_output_pixels={image_resize['max_output_pixels']}"
+    )
     print(
         "captions: "
         f"output={caption_summary['output_path']} "
@@ -598,18 +862,22 @@ def main() -> int:
     pridemm_root = Path(args.pridemm_root)
     output_root = Path(args.output_root)
 
+    print_step("Loading Hateful Memes and PrideMM records")
     source_records_by_split, decontamination = collect_source_records(
         hateful_root,
         pridemm_root,
     )
+    print_step("Building aggregated records and image write plan")
     split_records, index_records, copy_plan = build_records(
         source_records_by_split,
         output_root,
     )
+    print_step("Loading source caption files")
     source_captions, caption_paths = load_source_captions(
         hateful_root=hateful_root,
         pridemm_root=pridemm_root,
     )
+    print_step("Remapping captions to aggregated image names")
     aggregate_captions, caption_summary = build_aggregated_captions(
         index_records,
         source_captions,
@@ -617,32 +885,52 @@ def main() -> int:
     )
     caption_output_path = dataset_caption_file(output_root)
     caption_summary["output_path"] = str(caption_output_path)
+    print_step("Planning PrideMM image resizing")
+    image_resize = build_image_resize_summary(
+        copy_plan,
+        pridemm_max_pixels=args.pridemm_max_pixels,
+    )
+    print_step("Building manifest")
     manifest = build_manifest(
         split_records,
         hateful_root=hateful_root,
         pridemm_root=pridemm_root,
         decontamination=decontamination,
+        image_resize=image_resize,
     )
 
     if not args.dry_run:
+        print_step("Validating output paths")
         validate_caption_output(
             caption_output_path,
             caption_summary,
             overwrite=args.overwrite,
         )
+        print_step("Preparing output directory")
         prepare_output_root(
             output_root,
             hateful_root=hateful_root,
             pridemm_root=pridemm_root,
             overwrite=args.overwrite,
         )
-        write_dataset(output_root, split_records, index_records, copy_plan, manifest)
+        print_step("Writing aggregated dataset files")
+        write_dataset(
+            output_root,
+            split_records,
+            index_records,
+            copy_plan,
+            manifest,
+            pridemm_max_pixels=args.pridemm_max_pixels,
+        )
         if should_write_caption_json(caption_summary):
+            print_step("Writing aggregated caption file")
             write_caption_json(
                 caption_output_path,
                 aggregate_captions,
                 overwrite=args.overwrite,
             )
+    else:
+        print_step("Dry run selected; skipping file writes")
 
     print_summary(
         manifest,
