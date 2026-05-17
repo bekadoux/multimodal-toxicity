@@ -369,49 +369,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Hidden width of the downstream BLIP-2 classifier head.",
     )
 
-    eval_all_parser = subparsers.add_parser(
-        "eval-all",
-        help="Evaluate all matching CLIP checkpoints",
-    )
-    eval_all_parser.add_argument(
-        "data_root", nargs="?", default="./data/hateful_memes/"
-    )
-    eval_all_parser.add_argument("--ckpt-dir", default="ckpt")
-    eval_all_parser.add_argument("--model-name", default="CLIPClassifier")
-    eval_all_parser.add_argument("--version", default="v1")
-    eval_all_parser.add_argument("--num-classes", type=int, default=2)
-    eval_all_parser.add_argument("--batch-size", type=int, default=64)
-    eval_all_parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS)
-    eval_all_parser.add_argument("--prefetch-factor", type=int, default=2)
-    eval_all_parser.add_argument(
-        "--pin-memory",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    eval_all_parser.add_argument(
-        "--persistent-workers",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    add_eval_metadata_arg(eval_all_parser)
-    add_eval_selection_args(eval_all_parser)
-    eval_all_parser.add_argument(
-        "--clip-model-name",
-        default=DEFAULT_CLIP_MODEL_NAME,
-        help="OpenCLIP model architecture name.",
-    )
-    eval_all_parser.add_argument(
-        "--clip-pretrained",
-        default=DEFAULT_CLIP_PRETRAINED,
-        help="OpenCLIP pretrained weights tag or checkpoint path.",
-    )
-    eval_all_parser.add_argument(
-        "--captions",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
-    )
-
     caption_parser = subparsers.add_parser(
         "caption",
         help="Generate image captions",
@@ -673,29 +630,6 @@ def main() -> None:
             load_captions=args.captions,
             blip2_model_name=args.blip2_model_name,
             projected_dim=args.projected_dim,
-            metadata_file=args.metadata_file,
-            eval_split=args.eval_split,
-            source=args.source,
-        )
-        return
-
-    if args.command == "eval-all":
-        from commands.eval_all import evaluate_all_checkpoints
-
-        evaluate_all_checkpoints(
-            data_root=args.data_root,
-            ckpt_dir=args.ckpt_dir,
-            model_name=args.model_name,
-            version=args.version,
-            num_classes=args.num_classes,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            prefetch_factor=args.prefetch_factor,
-            pin_memory=args.pin_memory,
-            persistent_workers=args.persistent_workers,
-            load_captions=args.captions,
-            clip_model_name=args.clip_model_name,
-            clip_pretrained=args.clip_pretrained,
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
