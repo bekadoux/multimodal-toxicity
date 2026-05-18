@@ -4,7 +4,11 @@ from typing import Any
 import torch
 from torch import nn
 
-from commands.eval_utils import select_eval_dataloader
+from commands.eval_utils import (
+    ModalityAblatingCollator,
+    prepare_modality_ablation,
+    select_eval_dataloader,
+)
 from core.eval import append_log, evaluate
 from core.io import load_model
 from core.logs import build_log_path, make_run_timestamp
@@ -57,6 +61,7 @@ def validate_blip2_align(
     metadata_file: str = "MMHS150K_GT.json",
     eval_split: str = "val",
     source: str | None = None,
+    drop_modality: str | None = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -68,8 +73,16 @@ def validate_blip2_align(
     print(f"Evaluation log: {eval_log_path}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    load_captions = prepare_modality_ablation(
+        load_captions,
+        drop_modality,
+        eval_log_path,
+    )
 
-    collate_fn = Blip2BatchCollator(blip2_model_name)
+    collate_fn = ModalityAblatingCollator(
+        Blip2BatchCollator(blip2_model_name),
+        drop_modality,
+    )
 
     dm = build_eval_data_module(
         data_root=data_root,

@@ -3,7 +3,11 @@ import os
 import torch
 from torch import nn
 
-from commands.eval_utils import select_eval_dataloader
+from commands.eval_utils import (
+    prepare_modality_ablation,
+    select_eval_dataloader,
+    with_modality_ablation,
+)
 from core.eval import append_log, evaluate
 from core.io import load_model
 from core.logs import build_log_path, make_run_timestamp
@@ -32,6 +36,7 @@ def validate_clip_align(
     metadata_file: str = "MMHS150K_GT.json",
     eval_split: str = "val",
     source: str | None = None,
+    drop_modality: str | None = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -43,6 +48,11 @@ def validate_clip_align(
     print(f"Evaluation log: {eval_log_path}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    load_captions = prepare_modality_ablation(
+        load_captions,
+        drop_modality,
+        eval_log_path,
+    )
 
     dm = build_eval_data_module(
         data_root=data_root,
@@ -80,12 +90,13 @@ def validate_clip_align(
     append_log(eval_log_path, f"Loaded checkpoint '{checkpoint_path}'\n")
 
     criterion = nn.CrossEntropyLoss(ignore_index=-1)
+    process_batch = with_modality_ablation(dm.process_batch, drop_modality)
     val_metrics = evaluate(
         model,
         eval_loader,
         criterion,
         device,
-        process_batch=dm.process_batch,
+        process_batch=process_batch,
         log_path=eval_log_path,
     )
     val_auroc_str = (

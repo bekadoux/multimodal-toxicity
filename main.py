@@ -62,6 +62,12 @@ def add_eval_selection_args(parser: argparse.ArgumentParser) -> None:
         help="Dataset split to evaluate. Defaults to validation.",
     )
     add_source_arg(parser)
+    parser.add_argument(
+        "--drop-modality",
+        choices=["image", "text"],
+        default=None,
+        help="Evaluate after replacing one input modality with a neutral value.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -691,6 +697,7 @@ def main() -> None:
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
+            drop_modality=args.drop_modality,
         )
         return
 
@@ -718,6 +725,7 @@ def main() -> None:
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
+            drop_modality=args.drop_modality,
         )
         return
 
@@ -738,6 +746,7 @@ def main() -> None:
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
+            drop_modality=args.drop_modality,
         )
         return
 
@@ -759,6 +768,7 @@ def main() -> None:
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
+            drop_modality=args.drop_modality,
         )
         return
 
@@ -785,6 +795,7 @@ def main() -> None:
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
+            drop_modality=args.drop_modality,
         )
         return
 
