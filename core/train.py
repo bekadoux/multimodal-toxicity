@@ -8,7 +8,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .eval import evaluate
-from .io import create_checkpoint_run_dir, load_model, save_model
+from .io import (
+    create_checkpoint_run_dir,
+    load_model,
+    save_checkpoint_metadata,
+    save_model,
+)
 from .logs import build_log_path, make_run_timestamp
 
 
@@ -141,6 +146,7 @@ def train_model(
     train_log_preamble: str | None = None,
     checkpoint_strategy: str = "best-per-metric",
     gradient_clip_val: float | None = None,
+    checkpoint_metadata: dict[str, Any] | None = None,
 ):
     if checkpoint_limit == 0 or checkpoint_limit < -1:
         raise ValueError("checkpoint_limit must be -1 or a positive integer")
@@ -169,16 +175,31 @@ def train_model(
             )
 
     checkpoint_dir = create_checkpoint_run_dir(model_name)
+    checkpoint_metadata_path = None
+    if checkpoint_metadata is not None:
+        checkpoint_metadata = {
+            **checkpoint_metadata,
+            "model_name": model_name,
+            "checkpoint_dir": str(checkpoint_dir),
+        }
+        checkpoint_metadata_path = save_checkpoint_metadata(
+            checkpoint_dir,
+            checkpoint_metadata,
+        )
 
     print(f"Training log: {train_log_path}")
     print(f"Validation log: {eval_log_path}")
     print(f"Checkpoint directory: {checkpoint_dir}")
+    if checkpoint_metadata_path is not None:
+        print(f"Checkpoint metadata: {checkpoint_metadata_path}")
 
     append_log(train_log_path, "", reset=True)
     append_log(eval_log_path, "", reset=True)
     if train_log_preamble is not None:
         append_log(train_log_path, f"{train_log_preamble}\n")
     append_log(train_log_path, f"Checkpoint directory: {checkpoint_dir}\n")
+    if checkpoint_metadata_path is not None:
+        append_log(train_log_path, f"Checkpoint metadata: {checkpoint_metadata_path}\n")
     if checkpoint_strategy == "best-per-metric":
         checkpoint_limit_warning = (
             "Warning: --checkpoint-limit is ignored with "

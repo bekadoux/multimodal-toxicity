@@ -4,6 +4,7 @@ from typing import Any
 import torch
 from torch import nn, optim
 
+from commands.train_metadata import build_checkpoint_metadata
 from core.eval import evaluate_best_checkpoints
 from core.logs import build_log_path, make_run_timestamp
 from core.train import train_model
@@ -75,6 +76,12 @@ def train_blip2(
         source=source,
     )
     dm.setup()
+    checkpoint_metadata = build_checkpoint_metadata(
+        data_root,
+        dm,
+        load_captions,
+        source,
+    )
 
     class_weights, class_counts = dm.get_train_class_weights(num_classes)
     class_weights = class_weights.to(device)
@@ -128,6 +135,7 @@ def train_blip2(
         eval_log_path=val_log_path,
         train_log_preamble=class_weight_message,
         checkpoint_strategy=checkpoint_strategy,
+        checkpoint_metadata=checkpoint_metadata,
     )
 
     test_loader = dm.test_dataloader

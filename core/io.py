@@ -1,6 +1,7 @@
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import torch
 from torch import nn, optim
@@ -26,6 +27,20 @@ def create_checkpoint_run_dir(
             "directory."
         ) from exc
     return checkpoint_dir
+
+
+def save_checkpoint_metadata(
+    checkpoint_dir: str | Path,
+    metadata: dict[str, Any],
+    filename: str = "metadata.json",
+) -> Path:
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = checkpoint_dir / filename
+    with metadata_path.open("w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return metadata_path
 
 
 def save_model(
