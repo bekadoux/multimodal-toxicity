@@ -31,6 +31,8 @@ class AlignFusionFeatureExtractor(nn.Module):
 
     def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
         image_features, text_features = self.extract_features(*args, **kwargs)
+        image_features = image_features.to(next(self._image_map.parameters()).dtype)
+        text_features = text_features.to(next(self._text_map.parameters()).dtype)
         image_features = self._image_map(image_features)
         text_features = self._text_map(text_features)
         image_features = F.normalize(image_features, p=2, dim=1)
