@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import List, Tuple
 
@@ -472,6 +473,64 @@ def _is_hateful_memes_data_root(root: Path) -> bool:
     )
 
 
+def _load_aggregated_manifest(root: Path) -> dict:
+    manifest_path = root / "manifest.json"
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid aggregated manifest JSON: {manifest_path}") from exc
+
+    if not isinstance(manifest, dict):
+        raise ValueError(f"Aggregated manifest must be a JSON object: {manifest_path}")
+    return manifest
+
+
+def _aggregated_sources(root: Path) -> list[str]:
+    manifest = _load_aggregated_manifest(root)
+    sources = set()
+
+    source_roots = manifest.get("source_roots")
+    if isinstance(source_roots, dict):
+        sources.update(str(source) for source in source_roots)
+
+    split_policy = manifest.get("split_policy")
+    if isinstance(split_policy, dict):
+        for source_splits in split_policy.values():
+            if not isinstance(source_splits, list):
+                continue
+            for source_split in source_splits:
+                if isinstance(source_split, str) and ":" in source_split:
+                    sources.add(source_split.split(":", maxsplit=1)[0])
+
+    splits = manifest.get("splits")
+    if isinstance(splits, dict):
+        for split_summary in splits.values():
+            if not isinstance(split_summary, dict):
+                continue
+            by_source = split_summary.get("by_source")
+            if isinstance(by_source, dict):
+                sources.update(str(source) for source in by_source)
+
+    return sorted(sources)
+
+
+def _validate_aggregated_source(root: Path, source: str | None) -> None:
+    if source is None:
+        return
+
+    allowed_sources = _aggregated_sources(root)
+    if not allowed_sources:
+        raise ValueError(
+            f"No sources found in aggregated manifest: {root / 'manifest.json'}"
+        )
+    if source not in allowed_sources:
+        raise ValueError(
+            f"Unsupported aggregated source {source!r}; expected one of "
+            f"{allowed_sources}"
+        )
+
+
 def build_train_data_module(
     data_root: str,
     batch_size: int = 64,
@@ -481,9 +540,14 @@ def build_train_data_module(
     persistent_workers: bool = False,
     load_captions: bool = True,
     collate_fn=None,
+    source: str | None = None,
 ):
     root = Path(data_root)
+    if source is not None and not _is_aggregated_data_root(root):
+        raise ValueError("--source is only supported for aggregated dataset roots")
+
     if _is_aggregated_data_root(root):
+        _validate_aggregated_source(root, source)
         return AggregatedDataModule(
             data_root=data_root,
             batch_size=batch_size,
@@ -493,6 +557,7 @@ def build_train_data_module(
             persistent_workers=persistent_workers,
             load_captions=load_captions,
             collate_fn=collate_fn,
+            source=source,
         )
 
     if _is_hateful_memes_data_root(root):
@@ -552,12 +617,7 @@ def build_eval_data_module(
         )
 
     if _is_aggregated_data_root(root):
-        allowed_sources = {"hateful_memes", "pridemm"}
-        if source is not None and source not in allowed_sources:
-            raise ValueError(
-                f"Unsupported aggregated source {source!r}; expected one of "
-                f"{sorted(allowed_sources)}"
-            )
+        _validate_aggregated_source(root, source)
         return AggregatedDataModule(
             data_root=data_root,
             batch_size=batch_size,

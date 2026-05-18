@@ -54,6 +54,7 @@ def train_blip2(
     projected_dim: int = 512,
     weight_decay: float = 1e-3,
     checkpoint_strategy: str = "best-per-metric",
+    source: str | None = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -71,6 +72,7 @@ def train_blip2(
         persistent_workers=persistent_workers,
         load_captions=load_captions,
         collate_fn=collate_fn,
+        source=source,
     )
     dm.setup()
 
@@ -81,6 +83,10 @@ def train_blip2(
         f"Training class counts: {class_counts}\n"
         f"Using class weights: {class_weight_values}"
     )
+    if source is not None:
+        class_weight_message = (
+            f"Aggregated source filter: {source}\n{class_weight_message}"
+        )
     print(class_weight_message)
 
     torch_dtype = torch.bfloat16 if device.type == "cuda" else torch.float32

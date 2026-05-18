@@ -45,6 +45,14 @@ def add_eval_metadata_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_source_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--source",
+        default=None,
+        help="Filter an aggregated dataset by source.",
+    )
+
+
 def add_eval_selection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--split",
@@ -53,12 +61,7 @@ def add_eval_selection_args(parser: argparse.ArgumentParser) -> None:
         default="val",
         help="Dataset split to evaluate. Defaults to validation.",
     )
-    parser.add_argument(
-        "--source",
-        choices=["hateful_memes", "pridemm"],
-        default=None,
-        help="Filter an aggregated dataset by source.",
-    )
+    add_source_arg(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -111,6 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    add_source_arg(train_clip_parser)
     train_clip_parser.add_argument(
         "--checkpoint-strategy",
         choices=["best-per-metric", "best-loss"],
@@ -179,6 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    add_source_arg(train_clip_align_parser)
     train_clip_align_parser.add_argument(
         "--checkpoint-strategy",
         choices=["best-per-metric", "best-loss"],
@@ -220,6 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    add_source_arg(train_vbert_parser)
     train_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
     train_vbert_parser.add_argument("--weight-decay", type=float, default=1e-3)
     train_vbert_parser.add_argument(
@@ -263,6 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    add_source_arg(train_blip2_parser)
     train_blip2_parser.add_argument(
         "--blip2-model-name",
         default="Salesforce/blip2-itm-vit-g",
@@ -317,6 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Load image caption JSON if available.",
     )
+    add_source_arg(train_blip2_align_parser)
     train_blip2_align_parser.add_argument(
         "--blip2-model-name",
         default="Salesforce/blip2-itm-vit-g",
@@ -545,6 +553,7 @@ def main() -> None:
             clip_pretrained=args.clip_pretrained,
             weight_decay=args.weight_decay,
             checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
         )
         return
 
@@ -577,6 +586,7 @@ def main() -> None:
             weight_decay=args.weight_decay,
             gradient_clip_val=args.gradient_clip_val,
             checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
         )
         return
 
@@ -601,6 +611,7 @@ def main() -> None:
             max_visual_tokens=args.max_visual_tokens,
             weight_decay=args.weight_decay,
             checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
         )
         return
 
@@ -626,6 +637,7 @@ def main() -> None:
             projected_dim=args.projected_dim,
             weight_decay=args.weight_decay,
             checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
         )
         return
 
@@ -657,6 +669,7 @@ def main() -> None:
             weight_decay=args.weight_decay,
             gradient_clip_val=args.gradient_clip_val,
             checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
         )
         return
 

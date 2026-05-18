@@ -28,6 +28,7 @@ def train_vbert(
     max_visual_tokens: int = 16,
     weight_decay: float = 1e-3,
     checkpoint_strategy: str = "best-per-metric",
+    source: str | None = None,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -42,6 +43,7 @@ def train_vbert(
         pin_memory=pin_memory,
         persistent_workers=persistent_workers,
         load_captions=load_captions,
+        source=source,
     )
     dm.setup()
 
@@ -52,6 +54,10 @@ def train_vbert(
         f"Training class counts: {class_counts}\n"
         f"Using class weights: {class_weight_values}"
     )
+    if source is not None:
+        class_weight_message = (
+            f"Aggregated source filter: {source}\n{class_weight_message}"
+        )
     print(class_weight_message)
 
     model = VisualBERTClassifier(
