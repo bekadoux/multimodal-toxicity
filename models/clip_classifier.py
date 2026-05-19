@@ -55,25 +55,11 @@ class CLIPFeatureExtractor(nn.Module):
         image_features: torch.Tensor,
         text_features: torch.Tensor,
     ) -> torch.Tensor:
-        cosine_similarity = torch.cosine_similarity(
-            image_features,
-            text_features,
-            dim=1,
-        ).unsqueeze(1)
-        return torch.cat(
-            (
-                image_features,
-                text_features,
-                image_features * text_features,
-                torch.abs(image_features - text_features),
-                cosine_similarity,
-            ),
-            dim=1,
-        )
+        return torch.cat((image_features, text_features), dim=1)
 
     @property
     def output_dim(self) -> int:
-        return self._projection_dim * 4 + 1
+        return self._projection_dim * 2
 
 
 class ClassificationHead(nn.Module):
