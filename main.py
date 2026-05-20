@@ -13,6 +13,8 @@ from core.captions import (
 DEFAULT_NUM_WORKERS = min(4, max(1, (os.cpu_count() or 1) // 2))
 DEFAULT_CLIP_MODEL_NAME = "ViT-L-14"
 DEFAULT_CLIP_PRETRAINED = "datacomp_xl_s13b_b90k"
+DEFAULT_VILT_MODEL_NAME = "dandelin/vilt-b32-mlm-itm"
+DEFAULT_VILT_MAX_TEXT_LENGTH = 40
 
 
 def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
@@ -240,6 +242,66 @@ def build_parser() -> argparse.ArgumentParser:
         default="best-per-metric",
     )
 
+    train_vilt_parser = train_subparsers.add_parser(
+        "vilt",
+        help="Train ViLT classifier",
+    )
+    train_vilt_parser.add_argument(
+        "data_root", nargs="?", default="./data/hateful_memes/"
+    )
+    train_vilt_parser.add_argument("--model-name", default="ViLTClassifier")
+    train_vilt_parser.add_argument("--num-classes", type=int, default=2)
+    train_vilt_parser.add_argument("--batch-size", type=int, default=64)
+    train_vilt_parser.add_argument("--max-epochs", type=int, default=200)
+    train_vilt_parser.add_argument("--patience", type=int, default=15)
+    train_vilt_parser.add_argument("--min-delta", type=float, default=1e-4)
+    train_vilt_parser.add_argument("--checkpoint-limit", type=int, default=3)
+    train_vilt_parser.add_argument("--lr", type=float, default=1e-4)
+    train_vilt_parser.add_argument(
+        "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
+    )
+    train_vilt_parser.add_argument("--prefetch-factor", type=int, default=2)
+    train_vilt_parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    train_vilt_parser.add_argument(
+        "--persistent-workers",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    train_vilt_parser.add_argument(
+        "--captions",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Load image caption JSON if available.",
+    )
+    add_source_arg(train_vilt_parser)
+    train_vilt_parser.add_argument(
+        "--vilt-model-name",
+        default=DEFAULT_VILT_MODEL_NAME,
+        help="Hugging Face ViLT checkpoint name or local path.",
+    )
+    train_vilt_parser.add_argument(
+        "--max-text-length",
+        type=int,
+        default=DEFAULT_VILT_MAX_TEXT_LENGTH,
+        help="Maximum BERT-tokenized ViLT text length.",
+    )
+    train_vilt_parser.add_argument(
+        "--projected-dim",
+        type=int,
+        default=512,
+        help="Hidden width of the downstream ViLT classifier head.",
+    )
+    train_vilt_parser.add_argument("--weight-decay", type=float, default=1e-4)
+    train_vilt_parser.add_argument(
+        "--checkpoint-strategy",
+        choices=["best-per-metric", "best-loss"],
+        default="best-per-metric",
+    )
+
     train_blip2_parser = train_subparsers.add_parser(
         "blip2",
         help="Train BLIP-2 classifier",
@@ -418,6 +480,34 @@ def build_parser() -> argparse.ArgumentParser:
     add_eval_metadata_arg(eval_vbert_parser)
     add_eval_selection_args(eval_vbert_parser)
     eval_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
+
+    eval_vilt_parser = eval_subparsers.add_parser(
+        "vilt",
+        help="Evaluate ViLT classifier",
+    )
+    eval_vilt_parser.add_argument("checkpoint_path")
+    eval_vilt_parser.add_argument("data_root", nargs="?", default="data/hateful_memes/")
+    eval_vilt_parser.add_argument("--num-classes", type=int, default=2)
+    add_shared_dataloader_args(eval_vilt_parser)
+    add_eval_metadata_arg(eval_vilt_parser)
+    add_eval_selection_args(eval_vilt_parser)
+    eval_vilt_parser.add_argument(
+        "--vilt-model-name",
+        default=DEFAULT_VILT_MODEL_NAME,
+        help="Hugging Face ViLT checkpoint name or local path.",
+    )
+    eval_vilt_parser.add_argument(
+        "--max-text-length",
+        type=int,
+        default=DEFAULT_VILT_MAX_TEXT_LENGTH,
+        help="Maximum BERT-tokenized ViLT text length.",
+    )
+    eval_vilt_parser.add_argument(
+        "--projected-dim",
+        type=int,
+        default=512,
+        help="Hidden width of the downstream ViLT classifier head.",
+    )
 
     eval_blip2_parser = eval_subparsers.add_parser(
         "blip2",
@@ -621,6 +711,33 @@ def main() -> None:
         )
         return
 
+    if args.command == "train" and args.model == "vilt":
+        from commands.train_vilt import train_vilt
+
+        train_vilt(
+            data_root=args.data_root,
+            model_name=args.model_name,
+            num_classes=args.num_classes,
+            batch_size=args.batch_size,
+            max_epochs=args.max_epochs,
+            patience=args.patience,
+            min_delta=args.min_delta,
+            checkpoint_limit=args.checkpoint_limit,
+            lr=args.lr,
+            num_workers=args.num_workers,
+            prefetch_factor=args.prefetch_factor,
+            pin_memory=args.pin_memory,
+            persistent_workers=args.persistent_workers,
+            load_captions=args.captions,
+            vilt_model_name=args.vilt_model_name,
+            max_text_length=args.max_text_length,
+            projected_dim=args.projected_dim,
+            weight_decay=args.weight_decay,
+            checkpoint_strategy=args.checkpoint_strategy,
+            source=args.source,
+        )
+        return
+
     if args.command == "train" and args.model == "blip2":
         from commands.train_blip2 import train_blip2
 
@@ -743,6 +860,29 @@ def main() -> None:
             persistent_workers=args.persistent_workers,
             load_captions=args.captions,
             max_visual_tokens=args.max_visual_tokens,
+            metadata_file=args.metadata_file,
+            eval_split=args.eval_split,
+            source=args.source,
+            drop_modality=args.drop_modality,
+        )
+        return
+
+    if args.command == "eval" and args.model == "vilt":
+        from commands.eval_vilt import validate_vilt
+
+        validate_vilt(
+            checkpoint_path=args.checkpoint_path,
+            data_root=args.data_root,
+            num_classes=args.num_classes,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            prefetch_factor=args.prefetch_factor,
+            pin_memory=args.pin_memory,
+            persistent_workers=args.persistent_workers,
+            load_captions=args.captions,
+            vilt_model_name=args.vilt_model_name,
+            max_text_length=args.max_text_length,
+            projected_dim=args.projected_dim,
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
