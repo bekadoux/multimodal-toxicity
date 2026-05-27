@@ -14,6 +14,7 @@ from core.io import load_model
 from core.logs import build_log_path, make_run_timestamp
 from dataset.datamodule import build_eval_data_module, to_majority_label
 from models.vilt_classifier import (
+    DEFAULT_VILT_FEATURE_POOLING,
     DEFAULT_VILT_MAX_TEXT_LENGTH,
     DEFAULT_VILT_MODEL_NAME,
     ViltBatchCollator,
@@ -58,6 +59,7 @@ def validate_vilt(
     load_captions: bool = True,
     vilt_model_name: str = DEFAULT_VILT_MODEL_NAME,
     max_text_length: int = DEFAULT_VILT_MAX_TEXT_LENGTH,
+    feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
     projected_dim: int = 512,
     metadata_file: str = "MMHS150K_GT.json",
     eval_split: str = "val",
@@ -112,6 +114,7 @@ def validate_vilt(
         num_classes=num_classes,
         model_name=vilt_model_name,
         projected_dim=projected_dim,
+        feature_pooling=feature_pooling,
     ).to(device)
     model, _, _ = load_model(
         checkpoint_path,

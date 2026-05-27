@@ -10,6 +10,7 @@ from core.logs import build_log_path, make_run_timestamp
 from core.train import train_model
 from dataset.datamodule import build_train_data_module, to_majority_label
 from models.vilt_classifier import (
+    DEFAULT_VILT_FEATURE_POOLING,
     DEFAULT_VILT_MAX_TEXT_LENGTH,
     DEFAULT_VILT_MODEL_NAME,
     ViltBatchCollator,
@@ -59,6 +60,7 @@ def train_vilt(
     load_captions: bool = True,
     vilt_model_name: str = DEFAULT_VILT_MODEL_NAME,
     max_text_length: int = DEFAULT_VILT_MAX_TEXT_LENGTH,
+    feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
     projected_dim: int = 512,
     weight_decay: float = 1e-4,
     checkpoint_strategy: str = "best-per-metric",
@@ -115,6 +117,7 @@ def train_vilt(
         num_classes=num_classes,
         model_name=vilt_model_name,
         projected_dim=projected_dim,
+        feature_pooling=feature_pooling,
     ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
     trainable_parameters = [p for p in model.parameters() if p.requires_grad]
@@ -163,6 +166,7 @@ def train_vilt(
                 num_classes=num_classes,
                 model_name=vilt_model_name,
                 projected_dim=projected_dim,
+                feature_pooling=feature_pooling,
             ),
             dataloader=test_loader,
             criterion=criterion,

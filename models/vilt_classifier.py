@@ -7,6 +7,8 @@ from transformers import ViltModel, ViltProcessor
 DEFAULT_VILT_MODEL_NAME = "dandelin/vilt-b32-mlm-itm"
 DEFAULT_VILT_PROCESSOR_NAME = "dandelin/vilt-b32-mlm"
 DEFAULT_VILT_MAX_TEXT_LENGTH = 40
+VILT_FEATURE_POOLING_CHOICES = ("cls", "pooler")
+DEFAULT_VILT_FEATURE_POOLING = "cls"
 
 
 def vilt_caption_truncation_warning(max_text_length: int) -> str:
@@ -92,14 +94,25 @@ class ViltBatchCollator:
 
 
 class ViltBackbone(nn.Module):
-    def __init__(self, model_name: str = DEFAULT_VILT_MODEL_NAME) -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_VILT_MODEL_NAME,
+        feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
+    ) -> None:
         super(ViltBackbone, self).__init__()
+        if feature_pooling not in VILT_FEATURE_POOLING_CHOICES:
+            raise ValueError(
+                f"Unsupported ViLT feature pooling {feature_pooling!r}; "
+                f"expected one of {VILT_FEATURE_POOLING_CHOICES}"
+            )
+
         self._vilt = ViltModel.from_pretrained(model_name)
         for param in self._vilt.parameters():
             param.requires_grad = False
         self._vilt.eval()
         self._output_dim = self._vilt.config.hidden_size
         self._max_position_embeddings = self._vilt.config.max_position_embeddings
+        self._feature_pooling = feature_pooling
 
     def forward(self, model_inputs: dict[str, Any]) -> torch.Tensor:
         input_ids = model_inputs.get("input_ids")
@@ -115,9 +128,15 @@ class ViltBackbone(nn.Module):
         with torch.no_grad():
             outputs = self._vilt(**model_inputs, return_dict=True)
 
-        if outputs.pooler_output is not None:
+        if self._feature_pooling == "cls":
+            return outputs.last_hidden_state[:, 0, :]
+
+        if outputs.pooler_output is None:
+            raise RuntimeError("ViLT pooler_output is unavailable")
+        if self._feature_pooling == "pooler":
             return outputs.pooler_output
-        return outputs.last_hidden_state[:, 0, :]
+
+        raise RuntimeError(f"Unhandled ViLT feature pooling: {self._feature_pooling}")
 
     @property
     def output_dim(self) -> int:
@@ -156,9 +175,13 @@ class ViltClassifier(nn.Module):
         num_classes: int = 2,
         model_name: str = DEFAULT_VILT_MODEL_NAME,
         projected_dim: int = 512,
+        feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
     ) -> None:
         super(ViltClassifier, self).__init__()
-        self._backbone = ViltBackbone(model_name=model_name)
+        self._backbone = ViltBackbone(
+            model_name=model_name,
+            feature_pooling=feature_pooling,
+        )
         self._classifier = ClassificationHead(
             input_dim=self._backbone.output_dim,
             hidden_dims=(projected_dim, 256, 128),

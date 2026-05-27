@@ -20,7 +20,7 @@ def train_clip(
     patience: int = 15,
     min_delta: float = 1e-4,
     checkpoint_limit: int = 3,
-    lr: float = 1e-5,
+    lr: float = 1e-4,
     num_workers: int = 0,
     prefetch_factor: int = 2,
     pin_memory: bool = False,
@@ -28,7 +28,7 @@ def train_clip(
     load_captions: bool = True,
     clip_model_name: str = "ViT-L-14",
     clip_pretrained: str = "datacomp_xl_s13b_b90k",
-    weight_decay: float = 1e-3,
+    weight_decay: float = 1e-4,
     checkpoint_strategy: str = "best-per-metric",
     source: str | None = None,
 ):

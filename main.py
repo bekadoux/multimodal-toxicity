@@ -15,6 +15,8 @@ DEFAULT_CLIP_MODEL_NAME = "ViT-L-14"
 DEFAULT_CLIP_PRETRAINED = "datacomp_xl_s13b_b90k"
 DEFAULT_VILT_MODEL_NAME = "dandelin/vilt-b32-mlm-itm"
 DEFAULT_VILT_MAX_TEXT_LENGTH = 40
+DEFAULT_VILT_FEATURE_POOLING = "cls"
+VILT_FEATURE_POOLING_CHOICES = ("cls", "pooler")
 
 
 def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
@@ -90,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_parser.add_argument("--patience", type=int, default=15)
     train_clip_parser.add_argument("--min-delta", type=float, default=1e-4)
     train_clip_parser.add_argument("--checkpoint-limit", type=int, default=3)
-    train_clip_parser.add_argument("--lr", type=float, default=1e-5)
+    train_clip_parser.add_argument("--lr", type=float, default=1e-4)
     train_clip_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
@@ -115,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CLIP_PRETRAINED,
         help="OpenCLIP pretrained weights tag or checkpoint path.",
     )
-    train_clip_parser.add_argument("--weight-decay", type=float, default=1e-3)
+    train_clip_parser.add_argument("--weight-decay", type=float, default=1e-4)
     train_clip_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
@@ -212,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_vbert_parser.add_argument("--patience", type=int, default=15)
     train_vbert_parser.add_argument("--min-delta", type=float, default=1e-4)
     train_vbert_parser.add_argument("--checkpoint-limit", type=int, default=3)
-    train_vbert_parser.add_argument("--lr", type=float, default=2e-5)
+    train_vbert_parser.add_argument("--lr", type=float, default=1e-4)
     train_vbert_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
@@ -235,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_source_arg(train_vbert_parser)
     train_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
-    train_vbert_parser.add_argument("--weight-decay", type=float, default=1e-3)
+    train_vbert_parser.add_argument("--weight-decay", type=float, default=1e-4)
     train_vbert_parser.add_argument(
         "--checkpoint-strategy",
         choices=["best-per-metric", "best-loss"],
@@ -290,6 +292,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum BERT-tokenized ViLT text length.",
     )
     train_vilt_parser.add_argument(
+        "--vilt-feature-pooling",
+        choices=VILT_FEATURE_POOLING_CHOICES,
+        default=DEFAULT_VILT_FEATURE_POOLING,
+        help="ViLT feature to feed into the classifier head.",
+    )
+    train_vilt_parser.add_argument(
         "--projected-dim",
         type=int,
         default=512,
@@ -316,7 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_parser.add_argument("--patience", type=int, default=15)
     train_blip2_parser.add_argument("--min-delta", type=float, default=1e-4)
     train_blip2_parser.add_argument("--checkpoint-limit", type=int, default=3)
-    train_blip2_parser.add_argument("--lr", type=float, default=1e-5)
+    train_blip2_parser.add_argument("--lr", type=float, default=1e-4)
     train_blip2_parser.add_argument(
         "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
     )
@@ -348,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=512,
         help="Hidden width of the downstream BLIP-2 classifier head.",
     )
-    train_blip2_parser.add_argument("--weight-decay", type=float, default=1e-3)
+    train_blip2_parser.add_argument("--weight-decay", type=float, default=1e-4)
     train_blip2_parser.add_argument(
         "--checkpoint-strategy",
         choices=["best-per-metric", "best-loss"],
@@ -501,6 +509,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_VILT_MAX_TEXT_LENGTH,
         help="Maximum BERT-tokenized ViLT text length.",
+    )
+    eval_vilt_parser.add_argument(
+        "--vilt-feature-pooling",
+        choices=VILT_FEATURE_POOLING_CHOICES,
+        default=DEFAULT_VILT_FEATURE_POOLING,
+        help="ViLT feature to feed into the classifier head.",
     )
     eval_vilt_parser.add_argument(
         "--projected-dim",
@@ -731,6 +745,7 @@ def main() -> None:
             load_captions=args.captions,
             vilt_model_name=args.vilt_model_name,
             max_text_length=args.max_text_length,
+            feature_pooling=args.vilt_feature_pooling,
             projected_dim=args.projected_dim,
             weight_decay=args.weight_decay,
             checkpoint_strategy=args.checkpoint_strategy,
@@ -882,6 +897,7 @@ def main() -> None:
             load_captions=args.captions,
             vilt_model_name=args.vilt_model_name,
             max_text_length=args.max_text_length,
+            feature_pooling=args.vilt_feature_pooling,
             projected_dim=args.projected_dim,
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
