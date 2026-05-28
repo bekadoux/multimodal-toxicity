@@ -25,7 +25,7 @@ def train_clip(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     clip_model_name: str = "ViT-L-14",
     clip_pretrained: str = "datacomp_xl_s13b_b90k",
     weight_decay: float = 1e-4,
@@ -46,13 +46,16 @@ def train_clip(
         persistent_workers=persistent_workers,
         load_captions=load_captions,
         source=source,
+        return_captions=True,
     )
     dm.setup()
+    use_captions = dm.captions_used
     checkpoint_metadata = build_checkpoint_metadata(
         data_root,
         dm,
         load_captions,
         source,
+        caption_fusion="modernbert" if use_captions else None,
     )
 
     class_weights, class_counts = dm.get_train_class_weights(num_classes)
@@ -72,10 +75,12 @@ def train_clip(
         num_classes=num_classes,
         model_name=clip_model_name,
         pretrained=clip_pretrained,
+        use_captions=use_captions,
     ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
+    trainable_parameters = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.AdamW(
-        model._classifier.parameters(),
+        trainable_parameters,
         lr=lr,
         weight_decay=weight_decay,
     )
@@ -111,6 +116,7 @@ def train_clip(
                 num_classes=num_classes,
                 model_name=clip_model_name,
                 pretrained=clip_pretrained,
+                use_captions=use_captions,
             ),
             dataloader=test_loader,
             criterion=criterion,

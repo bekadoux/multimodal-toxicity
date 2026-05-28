@@ -4,6 +4,8 @@ import open_clip
 import torch
 import torch.nn as nn
 
+from models.caption_encoder import ModernBertCaptionEncoder
+
 DEFAULT_OPENCLIP_MODEL_NAME = "ViT-L-14"
 DEFAULT_OPENCLIP_PRETRAINED = "datacomp_xl_s13b_b90k"
 
@@ -61,6 +63,10 @@ class CLIPFeatureExtractor(nn.Module):
     def output_dim(self) -> int:
         return self._projection_dim * 2
 
+    @property
+    def projection_dim(self) -> int:
+        return self._projection_dim
+
 
 class ClassificationHead(nn.Module):
     def __init__(
@@ -94,13 +100,53 @@ class CLIPClassifier(nn.Module):
         num_classes: int = 2,
         model_name: str = DEFAULT_OPENCLIP_MODEL_NAME,
         pretrained: str = DEFAULT_OPENCLIP_PRETRAINED,
+        use_captions: bool = False,
     ) -> None:
         super(CLIPClassifier, self).__init__()
         self._feature_extractor = CLIPFeatureExtractor(model_name, pretrained)
-        input_dim = self._feature_extractor.output_dim
+        self._caption_encoder = ModernBertCaptionEncoder() if use_captions else None
+        self._caption_projection = None
+        caption_output_dim = 0
+        if self._caption_encoder is not None:
+            caption_output_dim = self._feature_extractor.projection_dim
+            self._caption_projection = nn.Sequential(
+                nn.LayerNorm(self._caption_encoder.output_dim),
+                nn.Linear(self._caption_encoder.output_dim, caption_output_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+        input_dim = self._feature_extractor.output_dim + caption_output_dim
         self._classifier = ClassificationHead(input_dim, num_classes=num_classes)
 
-    def forward(self, input_texts: List[str], input_images: List[Any]) -> torch.Tensor:
+    def _fuse_captions(
+        self,
+        features: torch.Tensor,
+        captions: list[str] | None,
+    ) -> torch.Tensor:
+        if self._caption_encoder is None or self._caption_projection is None:
+            return features
+
+        if captions is None:
+            captions = [""] * features.size(0)
+        if len(captions) != features.size(0):
+            raise ValueError(
+                "captions length must match the feature batch size: "
+                f"{len(captions)} != {features.size(0)}"
+            )
+
+        caption_features, caption_mask = self._caption_encoder(captions)
+        caption_features = self._caption_projection(caption_features)
+        caption_features = caption_features * caption_mask.to(caption_features.dtype)
+        caption_features = caption_features.to(features.dtype)
+        return torch.cat((features, caption_features), dim=1)
+
+    def forward(
+        self,
+        input_texts: List[str],
+        input_images: List[Any],
+        captions: list[str] | None = None,
+    ) -> torch.Tensor:
         features = self._feature_extractor(input_texts, input_images)
+        features = self._fuse_captions(features, captions)
         logits = self._classifier(features)
         return logits

@@ -6,6 +6,7 @@ from torch import nn
 
 from commands.eval_utils import (
     ModalityAblatingCollator,
+    checkpoint_uses_caption_fusion,
     prepare_modality_ablation,
     select_eval_dataloader,
 )
@@ -19,16 +20,15 @@ from models.vilt_classifier import (
     DEFAULT_VILT_MODEL_NAME,
     ViltBatchCollator,
     ViltClassifier,
-    vilt_caption_truncation_warning,
 )
 
 
 def process_vilt_batch(
-    batch: tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]],
+    batch: tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]],
     device: torch.device,
     num_classes: int,
-) -> tuple[tuple[dict[str, Any]], torch.Tensor]:
-    model_inputs, labels = batch
+) -> tuple[tuple[dict[str, Any], list[str]], torch.Tensor]:
+    model_inputs, captions, labels = batch
     model_inputs = {
         key: value.to(device, non_blocking=True)
         if isinstance(value, torch.Tensor)
@@ -44,7 +44,7 @@ def process_vilt_batch(
             dim=0,
         ).to(device, non_blocking=True)
 
-    return (model_inputs,), targets
+    return (model_inputs, captions), targets
 
 
 def validate_vilt(
@@ -56,7 +56,7 @@ def validate_vilt(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     vilt_model_name: str = DEFAULT_VILT_MODEL_NAME,
     max_text_length: int = DEFAULT_VILT_MAX_TEXT_LENGTH,
     feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
@@ -81,10 +81,7 @@ def validate_vilt(
         drop_modality,
         eval_log_path,
     )
-    if load_captions:
-        caption_warning_message = vilt_caption_truncation_warning(max_text_length)
-        print(caption_warning_message)
-        append_log(eval_log_path, f"{caption_warning_message}\n")
+    use_captions = checkpoint_uses_caption_fusion(checkpoint_path, load_captions)
 
     collate_fn = ModalityAblatingCollator(
         ViltBatchCollator(
@@ -106,6 +103,7 @@ def validate_vilt(
         metadata_filename=metadata_file,
         source=source,
         collate_fn=collate_fn,
+        return_captions=True,
     )
     dm.setup()
     eval_loader, split_label = select_eval_dataloader(dm, eval_split)
@@ -115,6 +113,7 @@ def validate_vilt(
         model_name=vilt_model_name,
         projected_dim=projected_dim,
         feature_pooling=feature_pooling,
+        use_captions=use_captions,
     ).to(device)
     model, _, _ = load_model(
         checkpoint_path,

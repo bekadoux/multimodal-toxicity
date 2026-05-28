@@ -15,16 +15,15 @@ from models.vilt_classifier import (
     DEFAULT_VILT_MODEL_NAME,
     ViltBatchCollator,
     ViltClassifier,
-    vilt_caption_truncation_warning,
 )
 
 
 def process_vilt_batch(
-    batch: tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]],
+    batch: tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]],
     device: torch.device,
     num_classes: int,
-) -> tuple[tuple[dict[str, Any]], torch.Tensor]:
-    model_inputs, labels = batch
+) -> tuple[tuple[dict[str, Any], list[str]], torch.Tensor]:
+    model_inputs, captions, labels = batch
     model_inputs = {
         key: value.to(device, non_blocking=True)
         if isinstance(value, torch.Tensor)
@@ -40,7 +39,7 @@ def process_vilt_batch(
             dim=0,
         ).to(device, non_blocking=True)
 
-    return (model_inputs,), targets
+    return (model_inputs, captions), targets
 
 
 def train_vilt(
@@ -57,7 +56,7 @@ def train_vilt(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = True,
-    load_captions: bool = True,
+    load_captions: bool = False,
     vilt_model_name: str = DEFAULT_VILT_MODEL_NAME,
     max_text_length: int = DEFAULT_VILT_MAX_TEXT_LENGTH,
     feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
@@ -70,11 +69,6 @@ def train_vilt(
     print(f"Using device: {device}")
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-    caption_warning_message = None
-    if load_captions:
-        caption_warning_message = vilt_caption_truncation_warning(max_text_length)
-        print(caption_warning_message)
 
     collate_fn = ViltBatchCollator(
         model_name=vilt_model_name,
@@ -91,13 +85,16 @@ def train_vilt(
         load_captions=load_captions,
         collate_fn=collate_fn,
         source=source,
+        return_captions=True,
     )
     dm.setup()
+    use_captions = dm.captions_used
     checkpoint_metadata = build_checkpoint_metadata(
         data_root,
         dm,
         load_captions,
         source,
+        caption_fusion="modernbert" if use_captions else None,
     )
 
     class_weights, class_counts = dm.get_train_class_weights(num_classes)
@@ -118,6 +115,7 @@ def train_vilt(
         model_name=vilt_model_name,
         projected_dim=projected_dim,
         feature_pooling=feature_pooling,
+        use_captions=use_captions,
     ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
     trainable_parameters = [p for p in model.parameters() if p.requires_grad]
@@ -130,10 +128,6 @@ def train_vilt(
     train_log_path = build_log_path(model_name, "train", timestamp=log_timestamp)
     val_log_path = build_log_path(model_name, "val", timestamp=log_timestamp)
     test_log_path = build_log_path(model_name, "test", timestamp=log_timestamp)
-
-    train_log_preamble = class_weight_message
-    if caption_warning_message is not None:
-        train_log_preamble = f"{caption_warning_message}\n{train_log_preamble}"
 
     _, best_checkpoint_paths_by_metric = train_model(
         model=model,
@@ -153,7 +147,7 @@ def train_vilt(
         ),
         train_log_path=train_log_path,
         eval_log_path=val_log_path,
-        train_log_preamble=train_log_preamble,
+        train_log_preamble=class_weight_message,
         checkpoint_strategy=checkpoint_strategy,
         checkpoint_metadata=checkpoint_metadata,
     )
@@ -167,6 +161,7 @@ def train_vilt(
                 model_name=vilt_model_name,
                 projected_dim=projected_dim,
                 feature_pooling=feature_pooling,
+                use_captions=use_captions,
             ),
             dataloader=test_loader,
             criterion=criterion,

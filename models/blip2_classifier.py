@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from transformers import Blip2ForImageTextRetrieval, Blip2Processor
 
+from models.caption_encoder import ModernBertCaptionEncoder
+
 
 class Blip2InputProcessor:
     def __init__(self, model_name: str) -> None:
@@ -48,8 +50,8 @@ class Blip2BatchCollator:
 
     def __call__(
         self, batch
-    ) -> tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]]:
-        texts, images, labels = zip(*batch)
+    ) -> tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]]:
+        texts, images, captions, labels = zip(*batch)
         model_inputs = self._input_processor(list(texts), list(images))
 
         first_label = labels[0]
@@ -58,7 +60,7 @@ class Blip2BatchCollator:
         else:
             batch_labels = list(labels)
 
-        return model_inputs, batch_labels
+        return model_inputs, list(captions), batch_labels
 
 
 class Blip2Backbone(nn.Module):
@@ -206,6 +208,7 @@ class Blip2Classifier(nn.Module):
         model_name: str = "Salesforce/blip2-itm-vit-g",
         torch_dtype: torch.dtype = torch.float32,
         projected_dim: int = 512,
+        use_captions: bool = False,
     ) -> None:
         super(Blip2Classifier, self).__init__()
         self._backbone = Blip2Backbone(
@@ -217,18 +220,60 @@ class Blip2Classifier(nn.Module):
         self._text_feature_extractor = Blip2TextFeatureExtractor(self._backbone)
         self._text_feature_pooler = Blip2TextFeaturePooler()
         self._feature_fusion = Blip2FeatureFusion()
+        self._caption_encoder = ModernBertCaptionEncoder() if use_captions else None
+        self._caption_projection = None
+        caption_output_dim = 0
+        if self._caption_encoder is not None:
+            caption_output_dim = self._backbone.text_output_dim
+            self._caption_projection = nn.Sequential(
+                nn.LayerNorm(self._caption_encoder.output_dim),
+                nn.Linear(self._caption_encoder.output_dim, caption_output_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
         self._classifier = ClassificationHead(
-            input_dim=self._backbone.vision_output_dim + self._backbone.text_output_dim,
+            input_dim=(
+                self._backbone.vision_output_dim
+                + self._backbone.text_output_dim
+                + caption_output_dim
+            ),
             hidden_dims=(projected_dim, 256, 128),
             num_classes=num_classes,
         )
 
-    def forward(self, model_inputs: dict[str, Any]) -> torch.Tensor:
+    def _fuse_captions(
+        self,
+        features: torch.Tensor,
+        captions: list[str] | None,
+    ) -> torch.Tensor:
+        if self._caption_encoder is None or self._caption_projection is None:
+            return features
+
+        if captions is None:
+            captions = [""] * features.size(0)
+        if len(captions) != features.size(0):
+            raise ValueError(
+                "captions length must match the feature batch size: "
+                f"{len(captions)} != {features.size(0)}"
+            )
+
+        caption_features, caption_mask = self._caption_encoder(captions)
+        caption_features = self._caption_projection(caption_features)
+        caption_features = caption_features * caption_mask.to(caption_features.dtype)
+        caption_features = caption_features.to(features.dtype)
+        return torch.cat((features, caption_features), dim=1)
+
+    def forward(
+        self,
+        model_inputs: dict[str, Any],
+        captions: list[str] | None = None,
+    ) -> torch.Tensor:
         image_features = self._vision_feature_extractor(model_inputs)
         image_features = self._image_feature_pooler(image_features)
         text_features, attention_mask = self._text_feature_extractor(model_inputs)
         text_features = self._text_feature_pooler(text_features, attention_mask)
 
         fused_features = self._feature_fusion(image_features, text_features)
+        fused_features = self._fuse_captions(fused_features, captions)
 
         return self._classifier(fused_features)

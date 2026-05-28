@@ -14,11 +14,11 @@ from models.blip2_classifier import Blip2BatchCollator
 
 
 def process_blip2_align_batch(
-    batch: tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]],
+    batch: tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]],
     device: torch.device,
     num_classes: int,
-) -> tuple[tuple[dict[str, Any]], torch.Tensor]:
-    model_inputs, labels = batch
+) -> tuple[tuple[dict[str, Any], list[str]], torch.Tensor]:
+    model_inputs, captions, labels = batch
     model_inputs = {
         key: value.to(device, non_blocking=True)
         if isinstance(value, torch.Tensor)
@@ -34,7 +34,7 @@ def process_blip2_align_batch(
             dim=0,
         ).to(device, non_blocking=True)
 
-    return (model_inputs,), targets
+    return (model_inputs, captions), targets
 
 
 def train_blip2_align(
@@ -51,7 +51,7 @@ def train_blip2_align(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = True,
-    load_captions: bool = True,
+    load_captions: bool = False,
     blip2_model_name: str = "Salesforce/blip2-itm-vit-g",
     map_dim: int = 1024,
     pre_output_dim: int = 1024,
@@ -81,13 +81,16 @@ def train_blip2_align(
         load_captions=load_captions,
         collate_fn=collate_fn,
         source=source,
+        return_captions=True,
     )
     dm.setup()
+    use_captions = dm.captions_used
     checkpoint_metadata = build_checkpoint_metadata(
         data_root,
         dm,
         load_captions,
         source,
+        caption_fusion="modernbert" if use_captions else None,
     )
 
     class_weights, class_counts = dm.get_train_class_weights(num_classes)
@@ -114,6 +117,7 @@ def train_blip2_align(
         map_dropout=map_dropout,
         fusion_dropout=fusion_dropout,
         pre_output_dropout=pre_output_dropout,
+        use_captions=use_captions,
     ).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights, ignore_index=-1)
     trainable_parameters = [p for p in model.parameters() if p.requires_grad]
@@ -165,6 +169,7 @@ def train_blip2_align(
                 map_dropout=map_dropout,
                 fusion_dropout=fusion_dropout,
                 pre_output_dropout=pre_output_dropout,
+                use_captions=use_captions,
             ),
             dataloader=test_loader,
             criterion=criterion,

@@ -36,8 +36,8 @@ def add_shared_dataloader_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
 
 
@@ -121,8 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
     add_source_arg(train_clip_parser)
     train_clip_parser.add_argument(
@@ -190,8 +190,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_clip_align_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
     add_source_arg(train_clip_align_parser)
     train_clip_align_parser.add_argument(
@@ -232,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_vbert_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Load image caption JSON if available.",
     )
     add_source_arg(train_vbert_parser)
@@ -276,8 +276,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_vilt_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
     add_source_arg(train_vilt_parser)
     train_vilt_parser.add_argument(
@@ -342,8 +342,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
     add_source_arg(train_blip2_parser)
     train_blip2_parser.add_argument(
@@ -397,8 +397,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_blip2_align_parser.add_argument(
         "--captions",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Load image caption JSON if available.",
+        default=False,
+        help="Load image caption JSON as a separate caption modality if available.",
     )
     add_source_arg(train_blip2_align_parser)
     train_blip2_align_parser.add_argument(

@@ -25,7 +25,7 @@ def train_vbert(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     max_visual_tokens: int = 16,
     weight_decay: float = 1e-4,
     checkpoint_strategy: str = "best-per-metric",

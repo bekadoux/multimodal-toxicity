@@ -24,7 +24,7 @@ def validate_vbert(
     num_workers: int = 0,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     max_visual_tokens: int = 16,
     metadata_file: str = "MMHS150K_GT.json",
     eval_split: str = "val",

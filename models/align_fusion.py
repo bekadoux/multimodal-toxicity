@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.caption_encoder import ModernBertCaptionEncoder
+
 
 class AlignFusionFeatureExtractor(nn.Module):
     def __init__(
@@ -12,6 +14,7 @@ class AlignFusionFeatureExtractor(nn.Module):
         text_input_dim: int,
         map_dim: int = 1024,
         map_dropout: float = 0.1,
+        use_captions: bool = False,
     ) -> None:
         super(AlignFusionFeatureExtractor, self).__init__()
         self._map_dim = map_dim
@@ -23,13 +26,49 @@ class AlignFusionFeatureExtractor(nn.Module):
             nn.Linear(text_input_dim, map_dim),
             nn.Dropout(p=map_dropout),
         )
+        self._caption_encoder = ModernBertCaptionEncoder() if use_captions else None
+        self._caption_map = None
+        if self._caption_encoder is not None:
+            self._caption_map = nn.Sequential(
+                nn.Linear(self._caption_encoder.output_dim, map_dim),
+                nn.Dropout(p=map_dropout),
+            )
 
     def extract_features(
         self, *args: Any, **kwargs: Any
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
-    def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
+    def _map_caption_features(
+        self,
+        captions: list[str] | None,
+        batch_size: int,
+    ) -> torch.Tensor | None:
+        if self._caption_encoder is None or self._caption_map is None:
+            return None
+
+        if captions is None:
+            captions = [""] * batch_size
+        if len(captions) != batch_size:
+            raise ValueError(
+                "captions length must match the feature batch size: "
+                f"{len(captions)} != {batch_size}"
+            )
+
+        caption_features, caption_mask = self._caption_encoder(captions)
+        caption_features = caption_features.to(
+            next(self._caption_map.parameters()).dtype
+        )
+        caption_features = self._caption_map(caption_features)
+        caption_features = F.normalize(caption_features, p=2, dim=1)
+        return caption_features * caption_mask.to(caption_features.dtype)
+
+    def forward(
+        self,
+        *args: Any,
+        captions: list[str] | None = None,
+        **kwargs: Any,
+    ) -> torch.Tensor:
         image_features, text_features = self.extract_features(*args, **kwargs)
         image_features = image_features.to(next(self._image_map.parameters()).dtype)
         text_features = text_features.to(next(self._text_map.parameters()).dtype)
@@ -37,11 +76,20 @@ class AlignFusionFeatureExtractor(nn.Module):
         text_features = self._text_map(text_features)
         image_features = F.normalize(image_features, p=2, dim=1)
         text_features = F.normalize(text_features, p=2, dim=1)
-        return image_features * text_features
+        fused_features = image_features * text_features
+        caption_features = self._map_caption_features(
+            captions,
+            batch_size=fused_features.size(0),
+        )
+        if caption_features is None:
+            return fused_features
+        return torch.cat((fused_features, caption_features), dim=1)
 
     @property
     def output_dim(self) -> int:
-        return self._map_dim
+        if self._caption_encoder is None:
+            return self._map_dim
+        return self._map_dim * 2
 
 
 class AlignFusionClassificationHead(nn.Module):
@@ -98,6 +146,11 @@ class AlignFusionClassifier(nn.Module):
             pre_output_dropout=pre_output_dropout,
         )
 
-    def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
-        features = self._feature_extractor(*args, **kwargs)
+    def forward(
+        self,
+        *args: Any,
+        captions: list[str] | None = None,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        features = self._feature_extractor(*args, captions=captions, **kwargs)
         return self._classifier(features)

@@ -6,6 +6,7 @@ from torch import nn
 
 from commands.eval_utils import (
     ModalityAblatingCollator,
+    checkpoint_uses_caption_fusion,
     prepare_modality_ablation,
     select_eval_dataloader,
 )
@@ -17,11 +18,11 @@ from models.blip2_classifier import Blip2BatchCollator, Blip2Classifier
 
 
 def process_blip2_batch(
-    batch: tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]],
+    batch: tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]],
     device: torch.device,
     num_classes: int,
-) -> tuple[tuple[dict[str, Any]], torch.Tensor]:
-    model_inputs, labels = batch
+) -> tuple[tuple[dict[str, Any], list[str]], torch.Tensor]:
+    model_inputs, captions, labels = batch
     model_inputs = {
         key: value.to(device, non_blocking=True)
         if isinstance(value, torch.Tensor)
@@ -37,7 +38,7 @@ def process_blip2_batch(
             dim=0,
         ).to(device, non_blocking=True)
 
-    return (model_inputs,), targets
+    return (model_inputs, captions), targets
 
 
 def validate_blip2(
@@ -49,7 +50,7 @@ def validate_blip2(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     blip2_model_name: str = "Salesforce/blip2-itm-vit-g",
     projected_dim: int = 512,
     metadata_file: str = "MMHS150K_GT.json",
@@ -72,6 +73,7 @@ def validate_blip2(
         drop_modality,
         eval_log_path,
     )
+    use_captions = checkpoint_uses_caption_fusion(checkpoint_path, load_captions)
 
     collate_fn = ModalityAblatingCollator(
         Blip2BatchCollator(blip2_model_name),
@@ -90,6 +92,7 @@ def validate_blip2(
         metadata_filename=metadata_file,
         source=source,
         collate_fn=collate_fn,
+        return_captions=True,
     )
     dm.setup()
     eval_loader, split_label = select_eval_dataloader(dm, eval_split)
@@ -100,6 +103,7 @@ def validate_blip2(
         model_name=blip2_model_name,
         torch_dtype=torch_dtype,
         projected_dim=projected_dim,
+        use_captions=use_captions,
     ).to(device)
     model, _, _ = load_model(
         checkpoint_path,

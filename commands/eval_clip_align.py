@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from commands.eval_utils import (
+    checkpoint_uses_caption_fusion,
     prepare_modality_ablation,
     select_eval_dataloader,
     with_modality_ablation,
@@ -24,7 +25,7 @@ def validate_clip_align(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     clip_model_name: str = "ViT-L-14",
     clip_pretrained: str = "datacomp_xl_s13b_b90k",
     map_dim: int = 1024,
@@ -53,6 +54,7 @@ def validate_clip_align(
         drop_modality,
         eval_log_path,
     )
+    use_captions = checkpoint_uses_caption_fusion(checkpoint_path, load_captions)
 
     dm = build_eval_data_module(
         data_root=data_root,
@@ -65,6 +67,7 @@ def validate_clip_align(
         num_classes=num_classes,
         metadata_filename=metadata_file,
         source=source,
+        return_captions=True,
     )
     dm.setup()
     eval_loader, split_label = select_eval_dataloader(dm, eval_split)
@@ -79,6 +82,7 @@ def validate_clip_align(
         map_dropout=map_dropout,
         fusion_dropout=fusion_dropout,
         pre_output_dropout=pre_output_dropout,
+        use_captions=use_captions,
     ).to(device)
     model, _, _ = load_model(
         checkpoint_path,

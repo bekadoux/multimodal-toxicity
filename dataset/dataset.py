@@ -15,11 +15,13 @@ class ImageTextJsonlDataset(Dataset):
         split: str = "train",
         captions_json: str | None = None,
         image_dir: str = "img",
+        append_captions_to_text: bool = False,
     ):
         self._root = Path(data_root)
         self._split = split
         self._image_dir = self._root / image_dir
         self._jsonl_path = self._root / f"{split}.jsonl"
+        self._append_captions_to_text = append_captions_to_text
         self._data = self._load_metadata()
         self._captions = None
         if captions_json:
@@ -50,7 +52,17 @@ class ImageTextJsonlDataset(Dataset):
     def __len__(self) -> int:
         return len(self._data)
 
-    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
+    def _caption_for_image(self, image_path: Path) -> str:
+        if self._captions is None:
+            return ""
+
+        image_key = image_path.relative_to(self._root).as_posix()
+        image_caption = self._captions.get(image_key)
+        if image_caption:
+            return str(image_caption)
+        return ""
+
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, str, torch.Tensor]:
         sample = self._data[idx]
         image_path = self._resolve_image_path(sample["img"])
 
@@ -62,13 +74,10 @@ class ImageTextJsonlDataset(Dataset):
         elif c == 4:
             image = image[:3, ...]
 
-        combined_text = sample["text"]
-
-        if self._captions is not None:
-            image_key = image_path.relative_to(self._root).as_posix()
-            image_caption = self._captions.get(image_key)
-            if image_caption:
-                combined_text += f"\nIMG_CAPTION: {image_caption}"
+        text = sample["text"]
+        caption = self._caption_for_image(image_path)
+        if self._append_captions_to_text and caption:
+            text += f"\nIMG_CAPTION: {caption}"
 
         label = sample.get("label")
         if label is None:
@@ -76,7 +85,7 @@ class ImageTextJsonlDataset(Dataset):
         else:
             label_tensor = torch.tensor(int(label), dtype=torch.long)
 
-        return combined_text, image, label_tensor
+        return text, image, caption, label_tensor
 
     @property
     def split(self) -> str:
@@ -99,6 +108,7 @@ class MMHS150KDataset(Dataset):
         captions_json: str | None = None,
         metadata_filename: str = "MMHS150K_GT.json",
         use_all_records: bool = False,
+        append_captions_to_text: bool = False,
     ):
         self._root = Path(data_root)
         self._split = split
@@ -106,6 +116,7 @@ class MMHS150KDataset(Dataset):
         self._ocr_dir = self._root / "img_txt"
         self._json_path = self._root / metadata_filename
         self._use_all_records = use_all_records
+        self._append_captions_to_text = append_captions_to_text
         self._data = self._load_metadata()
         self._record_ids = self._load_record_ids()
         self._captions = None
@@ -138,7 +149,17 @@ class MMHS150KDataset(Dataset):
     def __len__(self) -> int:
         return len(self._record_ids)
 
-    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, torch.Tensor]:
+    def _caption_for_image(self, image_path: Path) -> str:
+        if self._captions is None:
+            return ""
+
+        image_key = image_path.relative_to(self._root).as_posix()
+        image_caption = self._captions.get(image_key)
+        if image_caption:
+            return str(image_caption)
+        return ""
+
+    def __getitem__(self, idx: int) -> Tuple[str, torch.Tensor, str, torch.Tensor]:
         tweet_id = self._record_ids[idx]
         sample = self._data[tweet_id]
         tweet_text = sample["tweet_text"]
@@ -166,17 +187,14 @@ class MMHS150KDataset(Dataset):
         if ocr_text:
             combined_parts.append(f"OCR: {ocr_text}")
 
-        if self._captions is not None:
-            image_key = image_path.relative_to(self._root).as_posix()
-            image_caption = self._captions.get(image_key)
-            if image_caption:
-                combined_parts.append(f"IMG_CAPTION: {image_caption}")
-
         combined_text = "\n".join(combined_parts)
+        caption = self._caption_for_image(image_path)
+        if self._append_captions_to_text and caption:
+            combined_text += f"\nIMG_CAPTION: {caption}"
 
         votes = torch.tensor(sample["labels"], dtype=torch.long)
 
-        return combined_text, image, votes
+        return combined_text, image, caption, votes
 
     @property
     def split(self) -> str:
@@ -201,8 +219,14 @@ class HatefulMemesDataset(ImageTextJsonlDataset):
         data_root: str,
         split: str = "train",  # train/dev/test
         captions_json: str | None = None,
+        append_captions_to_text: bool = False,
     ):
-        super().__init__(data_root, split=split, captions_json=captions_json)
+        super().__init__(
+            data_root,
+            split=split,
+            captions_json=captions_json,
+            append_captions_to_text=append_captions_to_text,
+        )
 
 
 class AggregatedDataset(ImageTextJsonlDataset):
@@ -212,9 +236,15 @@ class AggregatedDataset(ImageTextJsonlDataset):
         split: str = "train",
         captions_json: str | None = None,
         source: str | None = None,
+        append_captions_to_text: bool = False,
     ):
         self._source = source
-        super().__init__(data_root, split=split, captions_json=captions_json)
+        super().__init__(
+            data_root,
+            split=split,
+            captions_json=captions_json,
+            append_captions_to_text=append_captions_to_text,
+        )
 
     def _load_metadata(self) -> List[Dict]:
         data = super()._load_metadata()

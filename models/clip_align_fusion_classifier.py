@@ -26,6 +26,7 @@ class CLIPAlignFusionFeatureExtractor(AlignFusionFeatureExtractor):
         pretrained: str = DEFAULT_OPENCLIP_PRETRAINED,
         map_dim: int = 1024,
         map_dropout: float = 0.1,
+        use_captions: bool = False,
     ) -> None:
         clip_model, _, preprocess = open_clip.create_model_and_transforms(
             model_name,
@@ -40,6 +41,7 @@ class CLIPAlignFusionFeatureExtractor(AlignFusionFeatureExtractor):
             text_input_dim=projection_dim,
             map_dim=map_dim,
             map_dropout=map_dropout,
+            use_captions=use_captions,
         )
 
         self._projection_dim = projection_dim
@@ -84,12 +86,14 @@ class CLIPAlignFusionClassifier(AlignFusionClassifier):
         map_dropout: float = 0.1,
         fusion_dropout: float = 0.4,
         pre_output_dropout: float = 0.2,
+        use_captions: bool = False,
     ) -> None:
         feature_extractor = CLIPAlignFusionFeatureExtractor(
             model_name=model_name,
             pretrained=pretrained,
             map_dim=map_dim,
             map_dropout=map_dropout,
+            use_captions=use_captions,
         )
         super(CLIPAlignFusionClassifier, self).__init__(
             feature_extractor=feature_extractor,
@@ -100,5 +104,10 @@ class CLIPAlignFusionClassifier(AlignFusionClassifier):
             pre_output_dropout=pre_output_dropout,
         )
 
-    def forward(self, input_texts: List[str], input_images: List[Any]) -> torch.Tensor:
-        return super().forward(input_texts, input_images)
+    def forward(
+        self,
+        input_texts: List[str],
+        input_images: List[Any],
+        captions: list[str] | None = None,
+    ) -> torch.Tensor:
+        return super().forward(input_texts, input_images, captions=captions)

@@ -19,6 +19,7 @@ class Blip2AlignFusionFeatureExtractor(AlignFusionFeatureExtractor):
         torch_dtype: torch.dtype = torch.float32,
         map_dim: int = 1024,
         map_dropout: float = 0.1,
+        use_captions: bool = False,
     ) -> None:
         backbone = Blip2Backbone(
             model_name=model_name,
@@ -29,6 +30,7 @@ class Blip2AlignFusionFeatureExtractor(AlignFusionFeatureExtractor):
             text_input_dim=backbone.text_output_dim,
             map_dim=map_dim,
             map_dropout=map_dropout,
+            use_captions=use_captions,
         )
         self._backbone = backbone
         self._vision_feature_extractor = Blip2VisionFeatureExtractor(self._backbone)
@@ -59,12 +61,14 @@ class Blip2AlignFusionClassifier(AlignFusionClassifier):
         map_dropout: float = 0.1,
         fusion_dropout: float = 0.4,
         pre_output_dropout: float = 0.2,
+        use_captions: bool = False,
     ) -> None:
         feature_extractor = Blip2AlignFusionFeatureExtractor(
             model_name=model_name,
             torch_dtype=torch_dtype,
             map_dim=map_dim,
             map_dropout=map_dropout,
+            use_captions=use_captions,
         )
         super(Blip2AlignFusionClassifier, self).__init__(
             feature_extractor=feature_extractor,
@@ -75,5 +79,9 @@ class Blip2AlignFusionClassifier(AlignFusionClassifier):
             pre_output_dropout=pre_output_dropout,
         )
 
-    def forward(self, model_inputs: dict[str, Any]) -> torch.Tensor:
-        return super().forward(model_inputs)
+    def forward(
+        self,
+        model_inputs: dict[str, Any],
+        captions: list[str] | None = None,
+    ) -> torch.Tensor:
+        return super().forward(model_inputs, captions=captions)

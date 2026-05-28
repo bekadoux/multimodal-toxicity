@@ -4,19 +4,13 @@ import torch
 import torch.nn as nn
 from transformers import ViltModel, ViltProcessor
 
+from models.caption_encoder import ModernBertCaptionEncoder
+
 DEFAULT_VILT_MODEL_NAME = "dandelin/vilt-b32-mlm-itm"
 DEFAULT_VILT_PROCESSOR_NAME = "dandelin/vilt-b32-mlm"
 DEFAULT_VILT_MAX_TEXT_LENGTH = 40
 VILT_FEATURE_POOLING_CHOICES = ("cls", "pooler")
 DEFAULT_VILT_FEATURE_POOLING = "cls"
-
-
-def vilt_caption_truncation_warning(max_text_length: int) -> str:
-    return (
-        "ViLT captions are requested. If a caption file is found, combined meme "
-        "text and appended IMG_CAPTION text is tokenized with max_text_length="
-        f"{max_text_length}; long captions may be truncated."
-    )
 
 
 class ViltInputProcessor:
@@ -80,8 +74,8 @@ class ViltBatchCollator:
     def __call__(
         self,
         batch,
-    ) -> tuple[dict[str, Any], torch.Tensor | list[torch.Tensor]]:
-        texts, images, labels = zip(*batch)
+    ) -> tuple[dict[str, Any], list[str], torch.Tensor | list[torch.Tensor]]:
+        texts, images, captions, labels = zip(*batch)
         model_inputs = self._input_processor(list(texts), list(images))
 
         first_label = labels[0]
@@ -90,7 +84,7 @@ class ViltBatchCollator:
         else:
             batch_labels = list(labels)
 
-        return model_inputs, batch_labels
+        return model_inputs, list(captions), batch_labels
 
 
 class ViltBackbone(nn.Module):
@@ -176,18 +170,57 @@ class ViltClassifier(nn.Module):
         model_name: str = DEFAULT_VILT_MODEL_NAME,
         projected_dim: int = 512,
         feature_pooling: str = DEFAULT_VILT_FEATURE_POOLING,
+        use_captions: bool = False,
     ) -> None:
         super(ViltClassifier, self).__init__()
         self._backbone = ViltBackbone(
             model_name=model_name,
             feature_pooling=feature_pooling,
         )
+        self._caption_encoder = ModernBertCaptionEncoder() if use_captions else None
+        self._caption_projection = None
+        caption_output_dim = 0
+        if self._caption_encoder is not None:
+            caption_output_dim = self._backbone.output_dim
+            self._caption_projection = nn.Sequential(
+                nn.LayerNorm(self._caption_encoder.output_dim),
+                nn.Linear(self._caption_encoder.output_dim, caption_output_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
         self._classifier = ClassificationHead(
-            input_dim=self._backbone.output_dim,
+            input_dim=self._backbone.output_dim + caption_output_dim,
             hidden_dims=(projected_dim, 256, 128),
             num_classes=num_classes,
         )
 
-    def forward(self, model_inputs: dict[str, Any]) -> torch.Tensor:
+    def _fuse_captions(
+        self,
+        features: torch.Tensor,
+        captions: list[str] | None,
+    ) -> torch.Tensor:
+        if self._caption_encoder is None or self._caption_projection is None:
+            return features
+
+        if captions is None:
+            captions = [""] * features.size(0)
+        if len(captions) != features.size(0):
+            raise ValueError(
+                "captions length must match the feature batch size: "
+                f"{len(captions)} != {features.size(0)}"
+            )
+
+        caption_features, caption_mask = self._caption_encoder(captions)
+        caption_features = self._caption_projection(caption_features)
+        caption_features = caption_features * caption_mask.to(caption_features.dtype)
+        caption_features = caption_features.to(features.dtype)
+        return torch.cat((features, caption_features), dim=1)
+
+    def forward(
+        self,
+        model_inputs: dict[str, Any],
+        captions: list[str] | None = None,
+    ) -> torch.Tensor:
         features = self._backbone(model_inputs)
+        features = self._fuse_captions(features, captions)
         return self._classifier(features)

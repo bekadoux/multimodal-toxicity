@@ -29,15 +29,15 @@ def get_dataloader_kwargs(
 
 
 def mmhs_collate_fn(batch):
-    texts, images, labels = zip(*batch)
-    return list(texts), list(images), list(labels)
+    texts, images, captions, labels = zip(*batch)
+    return list(texts), list(images), list(captions), list(labels)
 
 
 def hateful_memes_collate_fn(batch):
-    texts, images, labels = zip(*batch)
+    texts, images, captions, labels = zip(*batch)
     # Convert images from list of tensors to a list because sizes may vary.
     # Convert labels from list to tensor for batch processing
-    return list(texts), list(images), torch.stack(labels)
+    return list(texts), list(images), list(captions), torch.stack(labels)
 
 
 def to_majority_label(votes: torch.Tensor, num_classes: int = 6) -> torch.Tensor:
@@ -63,11 +63,12 @@ class MMHSDataModule:
         prefetch_factor: int = 2,  # Default PyTorch prefetch factor by default
         pin_memory: bool = False,  # No pinned memory by default for stability
         persistent_workers: bool = False,
-        load_captions: bool = True,
+        load_captions: bool = False,
         num_classes: int = 6,
         metadata_filename: str = "MMHS150K_GT.json",
         use_all_records: bool = False,
         collate_fn=None,
+        return_captions: bool = False,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -80,6 +81,9 @@ class MMHSDataModule:
         self._metadata_filename = metadata_filename
         self._use_all_records = use_all_records
         self._collate_fn = collate_fn or mmhs_collate_fn
+        self._return_captions = return_captions
+        self._captions_used = False
+        self._captions_file = None
 
         self._train_dataset = None
         self._val_dataset = None
@@ -94,10 +98,14 @@ class MMHSDataModule:
         self._test_dataloader = None
 
         captions_json = None
+        self._captions_used = False
+        self._captions_file = None
         if self._load_captions:
             candidate = dataset_caption_file(self._data_root)
             if candidate.exists():
                 captions_json = str(candidate)
+                self._captions_used = True
+                self._captions_file = candidate
                 print(f"Found captions file: {candidate}. Using captions.")
             else:
                 print(
@@ -106,12 +114,16 @@ class MMHSDataModule:
                 )
         else:
             print("Captions disabled via CLI flag. Continuing without captions.")
+        append_captions_to_text = (
+            captions_json is not None and not self._return_captions
+        )
         self._train_dataset = MMHS150KDataset(
             self._data_root,
             split="train",
             captions_json=captions_json,
             metadata_filename=self._metadata_filename,
             use_all_records=self._use_all_records,
+            append_captions_to_text=append_captions_to_text,
         )
         self._val_dataset = MMHS150KDataset(
             self._data_root,
@@ -119,6 +131,7 @@ class MMHSDataModule:
             captions_json=captions_json,
             metadata_filename=self._metadata_filename,
             use_all_records=self._use_all_records,
+            append_captions_to_text=append_captions_to_text,
         )
         self._test_dataset = MMHS150KDataset(
             self._data_root,
@@ -126,14 +139,19 @@ class MMHSDataModule:
             captions_json=captions_json,
             metadata_filename=self._metadata_filename,
             use_all_records=self._use_all_records,
+            append_captions_to_text=append_captions_to_text,
         )
 
     def process_batch(
         self,
-        batch: Tuple[List[str], List[torch.Tensor], List[torch.Tensor]],
+        batch: Tuple[List[str], List[torch.Tensor], List[str], List[torch.Tensor]],
         device: torch.device,
-    ) -> Tuple[Tuple[List[str], List[torch.Tensor]], torch.Tensor]:
-        texts, images, votes = batch
+    ) -> Tuple[
+        Tuple[List[str], List[torch.Tensor]]
+        | Tuple[List[str], List[torch.Tensor], List[str]],
+        torch.Tensor,
+    ]:
+        texts, images, captions, votes = batch
         images = [img.to(device, non_blocking=True) for img in images]
 
         targets = torch.stack(
@@ -141,6 +159,8 @@ class MMHSDataModule:
             dim=0,
         ).to(device, non_blocking=True)
 
+        if self._return_captions:
+            return (texts, images, captions), targets
         return (texts, images), targets
 
     def _build_dataloader(self, dataset, shuffle: bool, collate_fn) -> DataLoader:
@@ -211,6 +231,18 @@ class MMHSDataModule:
             return self._test_dataset
         return None
 
+    @property
+    def captions_requested(self) -> bool:
+        return self._load_captions
+
+    @property
+    def captions_used(self) -> bool:
+        return self._captions_used
+
+    @property
+    def captions_file(self) -> Path | None:
+        return self._captions_file
+
 
 class BinaryImageTextDataModule:
     def __init__(
@@ -224,10 +256,11 @@ class BinaryImageTextDataModule:
         split_train: str = "train",
         split_val: str = "dev_seen",
         split_test: str = "test_seen",
-        load_captions: bool = True,
+        load_captions: bool = False,
         collate_fn=None,
         dataset_cls: type[ImageTextJsonlDataset] = ImageTextJsonlDataset,
         dataset_kwargs: dict | None = None,
+        return_captions: bool = False,
     ):
         self._data_root = data_root
         self._batch_size = batch_size
@@ -242,6 +275,9 @@ class BinaryImageTextDataModule:
         self._collate_fn = collate_fn or hateful_memes_collate_fn
         self._dataset_cls = dataset_cls
         self._dataset_kwargs = dataset_kwargs or {}
+        self._return_captions = return_captions
+        self._captions_used = False
+        self._captions_file = None
 
         self._train_dataset = None
         self._val_dataset = None
@@ -256,10 +292,14 @@ class BinaryImageTextDataModule:
         self._test_dataloader = None
 
         captions_json = None
+        self._captions_used = False
+        self._captions_file = None
         if self._load_captions:
             candidate = dataset_caption_file(self._data_root)
             if candidate.exists():
                 captions_json = str(candidate)
+                self._captions_used = True
+                self._captions_file = candidate
                 print(f"Found captions file: {candidate}. Using captions.")
             else:
                 print(
@@ -268,33 +308,45 @@ class BinaryImageTextDataModule:
                 )
         else:
             print("Captions disabled via CLI flag. Continuing without captions.")
+        append_captions_to_text = (
+            captions_json is not None and not self._return_captions
+        )
         self._train_dataset = self._dataset_cls(
             self._data_root,
             split=self._split_train,
             captions_json=captions_json,
+            append_captions_to_text=append_captions_to_text,
             **self._dataset_kwargs,
         )
         self._val_dataset = self._dataset_cls(
             self._data_root,
             split=self._split_val,
             captions_json=captions_json,
+            append_captions_to_text=append_captions_to_text,
             **self._dataset_kwargs,
         )
         self._test_dataset = self._dataset_cls(
             self._data_root,
             split=self._split_test,
             captions_json=captions_json,
+            append_captions_to_text=append_captions_to_text,
             **self._dataset_kwargs,
         )
 
     def process_batch(
         self,
-        batch: Tuple[List[str], List[torch.Tensor], torch.Tensor],
+        batch: Tuple[List[str], List[torch.Tensor], List[str], torch.Tensor],
         device: torch.device,
-    ) -> Tuple[Tuple[List[str], List[torch.Tensor]], torch.Tensor]:
-        texts, images, labels = batch
+    ) -> Tuple[
+        Tuple[List[str], List[torch.Tensor]]
+        | Tuple[List[str], List[torch.Tensor], List[str]],
+        torch.Tensor,
+    ]:
+        texts, images, captions, labels = batch
         images = [img.to(device, non_blocking=True) for img in images]
         labels = labels.to(device, non_blocking=True)
+        if self._return_captions:
+            return (texts, images, captions), labels
         return (texts, images), labels
 
     def _build_dataloader(self, dataset, shuffle: bool, collate_fn) -> DataLoader:
@@ -359,6 +411,18 @@ class BinaryImageTextDataModule:
     def test_dataset(self) -> ImageTextJsonlDataset | None:
         return self._test_dataset
 
+    @property
+    def captions_requested(self) -> bool:
+        return self._load_captions
+
+    @property
+    def captions_used(self) -> bool:
+        return self._captions_used
+
+    @property
+    def captions_file(self) -> Path | None:
+        return self._captions_file
+
     def get_train_class_weights(
         self, num_classes: int
     ) -> tuple[torch.Tensor, dict[int, int]]:
@@ -402,8 +466,9 @@ class HatefulMemesDataModule(BinaryImageTextDataModule):
         split_train: str = "train",
         split_val: str = "dev_seen",
         split_test: str = "test_seen",
-        load_captions: bool = True,
+        load_captions: bool = False,
         collate_fn=None,
+        return_captions: bool = False,
     ):
         super().__init__(
             data_root=data_root,
@@ -418,6 +483,7 @@ class HatefulMemesDataModule(BinaryImageTextDataModule):
             load_captions=load_captions,
             collate_fn=collate_fn,
             dataset_cls=HatefulMemesDataset,
+            return_captions=return_captions,
         )
 
 
@@ -433,9 +499,10 @@ class AggregatedDataModule(BinaryImageTextDataModule):
         split_train: str = "train",
         split_val: str = "val",
         split_test: str = "test",
-        load_captions: bool = True,
+        load_captions: bool = False,
         collate_fn=None,
         source: str | None = None,
+        return_captions: bool = False,
     ):
         super().__init__(
             data_root=data_root,
@@ -451,6 +518,7 @@ class AggregatedDataModule(BinaryImageTextDataModule):
             collate_fn=collate_fn,
             dataset_cls=AggregatedDataset,
             dataset_kwargs={"source": source},
+            return_captions=return_captions,
         )
 
 
@@ -538,9 +606,10 @@ def build_train_data_module(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     collate_fn=None,
     source: str | None = None,
+    return_captions: bool = False,
 ):
     root = Path(data_root)
     if source is not None and not _is_aggregated_data_root(root):
@@ -558,6 +627,7 @@ def build_train_data_module(
             load_captions=load_captions,
             collate_fn=collate_fn,
             source=source,
+            return_captions=return_captions,
         )
 
     if _is_hateful_memes_data_root(root):
@@ -570,6 +640,7 @@ def build_train_data_module(
             persistent_workers=persistent_workers,
             load_captions=load_captions,
             collate_fn=collate_fn,
+            return_captions=return_captions,
         )
 
     raise ValueError(
@@ -587,11 +658,12 @@ def build_eval_data_module(
     prefetch_factor: int = 2,
     pin_memory: bool = False,
     persistent_workers: bool = False,
-    load_captions: bool = True,
+    load_captions: bool = False,
     num_classes: int = 2,
     metadata_filename: str = "MMHS150K_GT.json",
     source: str | None = None,
     collate_fn=None,
+    return_captions: bool = False,
 ):
     root = Path(data_root)
     if source is not None and not _is_aggregated_data_root(root):
@@ -614,6 +686,7 @@ def build_eval_data_module(
             metadata_filename=metadata_filename,
             use_all_records=use_all_records,
             collate_fn=collate_fn,
+            return_captions=return_captions,
         )
 
     if _is_aggregated_data_root(root):
@@ -628,6 +701,7 @@ def build_eval_data_module(
             load_captions=load_captions,
             collate_fn=collate_fn,
             source=source,
+            return_captions=return_captions,
         )
 
     if _is_hateful_memes_data_root(root):
@@ -640,6 +714,7 @@ def build_eval_data_module(
             persistent_workers=persistent_workers,
             load_captions=load_captions,
             collate_fn=collate_fn,
+            return_captions=return_captions,
         )
 
     raise ValueError(

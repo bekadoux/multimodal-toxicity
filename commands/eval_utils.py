@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -5,6 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from core.eval import append_log
+
+CAPTION_FUSION_MODERNBERT = "modernbert"
 
 
 def select_eval_dataloader(data_module: Any, split: str) -> tuple[DataLoader, str]:
@@ -73,8 +76,16 @@ def with_modality_ablation(
 
     def wrapped(batch: Any, device: torch.device):
         inputs, labels = process_batch(batch, device)
-        texts, images = inputs
-        return apply_modality_ablation(texts, images, drop_modality), labels
+        if len(inputs) == 2:
+            texts, images = inputs
+            return apply_modality_ablation(texts, images, drop_modality), labels
+
+        if len(inputs) == 3:
+            texts, images, captions = inputs
+            texts, images = apply_modality_ablation(texts, images, drop_modality)
+            return (texts, images, captions), labels
+
+        raise ValueError(f"Unsupported model input structure: {len(inputs)} items")
 
     return wrapped
 
@@ -91,7 +102,17 @@ class ModalityAblatingCollator:
             return self._collate_fn(batch)
 
         ablated = []
-        for text, image, label in batch:
+        for sample in batch:
+            if len(sample) == 3:
+                text, image, label = sample
+                caption = None
+            elif len(sample) == 4:
+                text, image, caption, label = sample
+            else:
+                raise ValueError(
+                    f"Unsupported batch sample structure: {len(sample)} items"
+                )
+
             if self._drop_modality == "text":
                 text = ""
             elif self._drop_modality == "image":
@@ -100,6 +121,33 @@ class ModalityAblatingCollator:
                 raise ValueError(
                     f"Unsupported modality ablation: {self._drop_modality}"
                 )
-            ablated.append((text, image, label))
+            if caption is None:
+                ablated.append((text, image, label))
+            else:
+                ablated.append((text, image, caption, label))
 
         return self._collate_fn(ablated)
+
+
+def load_checkpoint_metadata(checkpoint_path: str | Path) -> dict[str, Any] | None:
+    metadata_path = Path(checkpoint_path).parent / "metadata.json"
+    if not metadata_path.exists():
+        return None
+
+    with metadata_path.open("r", encoding="utf-8") as f:
+        metadata = json.load(f)
+    if not isinstance(metadata, dict):
+        raise ValueError(f"Checkpoint metadata must be a JSON object: {metadata_path}")
+    return metadata
+
+
+def checkpoint_uses_caption_fusion(
+    checkpoint_path: str | Path,
+    fallback: bool,
+) -> bool:
+    metadata = load_checkpoint_metadata(checkpoint_path)
+    if metadata is None:
+        return fallback
+    if "caption_fusion" in metadata:
+        return metadata["caption_fusion"] == CAPTION_FUSION_MODERNBERT
+    return fallback
