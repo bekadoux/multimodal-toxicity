@@ -200,50 +200,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="best-per-metric",
     )
 
-    train_vbert_parser = train_subparsers.add_parser(
-        "vbert",
-        help="Train VisualBERT",
-    )
-    train_vbert_parser.add_argument(
-        "data_root", nargs="?", default="./data/hateful_memes/"
-    )
-    train_vbert_parser.add_argument("--model-name", default="VisualBERT")
-    train_vbert_parser.add_argument("--num-classes", type=int, default=2)
-    train_vbert_parser.add_argument("--batch-size", type=int, default=64)
-    train_vbert_parser.add_argument("--max-epochs", type=int, default=10)
-    train_vbert_parser.add_argument("--patience", type=int, default=10)
-    train_vbert_parser.add_argument("--min-delta", type=float, default=1e-4)
-    train_vbert_parser.add_argument("--checkpoint-limit", type=int, default=3)
-    train_vbert_parser.add_argument("--lr", type=float, default=1e-4)
-    train_vbert_parser.add_argument(
-        "--num-workers", type=int, default=DEFAULT_NUM_WORKERS
-    )
-    train_vbert_parser.add_argument("--prefetch-factor", type=int, default=2)
-    train_vbert_parser.add_argument(
-        "--pin-memory",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-    )
-    train_vbert_parser.add_argument(
-        "--persistent-workers",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    train_vbert_parser.add_argument(
-        "--captions",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Load image caption JSON if available.",
-    )
-    add_source_arg(train_vbert_parser)
-    train_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
-    train_vbert_parser.add_argument("--weight-decay", type=float, default=1e-4)
-    train_vbert_parser.add_argument(
-        "--checkpoint-strategy",
-        choices=["best-per-metric", "best-loss"],
-        default="best-per-metric",
-    )
-
     train_vilt_parser = train_subparsers.add_parser(
         "vilt",
         help="Train ViLT classifier",
@@ -478,17 +434,6 @@ def build_parser() -> argparse.ArgumentParser:
     eval_clip_align_parser.add_argument("--fusion-dropout", type=float, default=0.4)
     eval_clip_align_parser.add_argument("--pre-output-dropout", type=float, default=0.2)
 
-    eval_vbert_parser = eval_subparsers.add_parser("vbert", help="Evaluate VisualBERT")
-    eval_vbert_parser.add_argument("checkpoint_path")
-    eval_vbert_parser.add_argument(
-        "data_root", nargs="?", default="data/hateful_memes/"
-    )
-    eval_vbert_parser.add_argument("--num-classes", type=int, default=2)
-    add_shared_dataloader_args(eval_vbert_parser)
-    add_eval_metadata_arg(eval_vbert_parser)
-    add_eval_selection_args(eval_vbert_parser)
-    eval_vbert_parser.add_argument("--max-visual-tokens", type=int, default=16)
-
     eval_vilt_parser = eval_subparsers.add_parser(
         "vilt",
         help="Evaluate ViLT classifier",
@@ -700,31 +645,6 @@ def main() -> None:
         )
         return
 
-    if args.command == "train" and args.model == "vbert":
-        from commands.train_vbert import train_vbert
-
-        train_vbert(
-            data_root=args.data_root,
-            model_name=args.model_name,
-            num_classes=args.num_classes,
-            batch_size=args.batch_size,
-            max_epochs=args.max_epochs,
-            patience=args.patience,
-            min_delta=args.min_delta,
-            checkpoint_limit=args.checkpoint_limit,
-            lr=args.lr,
-            num_workers=args.num_workers,
-            prefetch_factor=args.prefetch_factor,
-            pin_memory=args.pin_memory,
-            persistent_workers=args.persistent_workers,
-            load_captions=args.captions,
-            max_visual_tokens=args.max_visual_tokens,
-            weight_decay=args.weight_decay,
-            checkpoint_strategy=args.checkpoint_strategy,
-            source=args.source,
-        )
-        return
-
     if args.command == "train" and args.model == "vilt":
         from commands.train_vilt import train_vilt
 
@@ -854,27 +774,6 @@ def main() -> None:
             map_dropout=args.map_dropout,
             fusion_dropout=args.fusion_dropout,
             pre_output_dropout=args.pre_output_dropout,
-            metadata_file=args.metadata_file,
-            eval_split=args.eval_split,
-            source=args.source,
-            drop_modality=args.drop_modality,
-        )
-        return
-
-    if args.command == "eval" and args.model == "vbert":
-        from commands.eval_vbert import validate_vbert
-
-        validate_vbert(
-            checkpoint_path=args.checkpoint_path,
-            data_root=args.data_root,
-            num_classes=args.num_classes,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            prefetch_factor=args.prefetch_factor,
-            pin_memory=args.pin_memory,
-            persistent_workers=args.persistent_workers,
-            load_captions=args.captions,
-            max_visual_tokens=args.max_visual_tokens,
             metadata_file=args.metadata_file,
             eval_split=args.eval_split,
             source=args.source,
