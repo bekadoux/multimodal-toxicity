@@ -512,10 +512,11 @@ def prepare_output_root(
     pridemm_root: Path,
     overwrite: bool,
 ) -> None:
-    resolved_output = output_root.resolve()
-    source_roots = {hateful_root.resolve(), pridemm_root.resolve()}
-    if resolved_output in source_roots:
-        raise ValueError("output-root must not be the same as an input dataset root")
+    validate_output_root_safety(
+        output_root,
+        hateful_root=hateful_root,
+        pridemm_root=pridemm_root,
+    )
 
     if output_root.exists():
         if not overwrite:
@@ -525,6 +526,32 @@ def prepare_output_root(
         shutil.rmtree(output_root)
 
     (output_root / "img").mkdir(parents=True, exist_ok=True)
+
+
+def validate_output_root_safety(
+    output_root: Path,
+    *,
+    hateful_root: Path,
+    pridemm_root: Path,
+) -> None:
+    resolved_output = output_root.resolve()
+    if resolved_output == REPO_ROOT.resolve():
+        raise ValueError("output-root must not be the repository root")
+
+    if resolved_output == (REPO_ROOT / "data").resolve():
+        raise ValueError("output-root must not be the repository data directory")
+
+    for source_root in (hateful_root.resolve(), pridemm_root.resolve()):
+        if resolved_output == source_root:
+            raise ValueError(
+                "output-root must not be the same as an input dataset root"
+            )
+        if source_root.is_relative_to(resolved_output):
+            raise ValueError(
+                "output-root must not be a parent of an input dataset root"
+            )
+        if resolved_output.is_relative_to(source_root):
+            raise ValueError("output-root must not be inside an input dataset root")
 
 
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -861,6 +888,13 @@ def main() -> int:
     hateful_root = Path(args.hateful_root)
     pridemm_root = Path(args.pridemm_root)
     output_root = Path(args.output_root)
+
+    print_step("Validating output path safety")
+    validate_output_root_safety(
+        output_root,
+        hateful_root=hateful_root,
+        pridemm_root=pridemm_root,
+    )
 
     print_step("Loading Hateful Memes and PrideMM records")
     source_records_by_split, decontamination = collect_source_records(

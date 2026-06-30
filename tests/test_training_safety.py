@@ -61,12 +61,6 @@ def test_train_model_rejects_invalid_options(
         )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "train_epoch currently averages per-batch losses instead of per-sample losses"
-    ),
-    strict=True,
-)
 def test_train_epoch_weights_loss_by_sample_count_for_uneven_batches() -> None:
     logits = torch.tensor(
         [

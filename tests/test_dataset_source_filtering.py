@@ -20,10 +20,6 @@ def _write_image(path: Path) -> None:
     write_png(torch.zeros(3, 4, 4, dtype=torch.uint8), str(path))
 
 
-@pytest.mark.xfail(
-    reason="AggregatedDataset currently checks image existence before source filtering",
-    strict=True,
-)
 def test_aggregated_source_filter_runs_before_missing_image_checks(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

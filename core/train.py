@@ -109,13 +109,13 @@ def train_epoch(
             torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
         optimizer.step()
 
-        running_loss += loss.item()
-
         preds = outputs.argmax(dim=1)
+        batch_size = preds.size(0)
+        running_loss += loss.item() * batch_size
         correct += (preds == labels).sum().item()
-        total += preds.size(0)
+        total += batch_size
 
-        avg_loss = running_loss / (total // labels.size(0))
+        avg_loss = running_loss / total
         progress_bar.set_postfix(loss=loss.item(), avg_loss=avg_loss)
 
         if (i + 1) % log_interval == 0:
@@ -125,7 +125,9 @@ def train_epoch(
                 f"Avg Loss: {avg_loss:.4f}\n",
             )
 
-    return running_loss / len(dataloader), correct / total
+    if total == 0:
+        raise ValueError("Training DataLoader did not yield any samples")
+    return running_loss / total, correct / total
 
 
 def train_model(

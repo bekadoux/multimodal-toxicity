@@ -49,10 +49,6 @@ def test_prepare_output_root_rejects_existing_output_without_overwrite(
     assert output_root.exists()
 
 
-@pytest.mark.xfail(
-    reason="prepare_output_root does not yet reject source parents before rmtree",
-    strict=True,
-)
 def test_prepare_output_root_rejects_source_parent_before_destructive_delete(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

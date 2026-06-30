@@ -42,12 +42,17 @@ class ImageTextJsonlDataset(Dataset):
         with open(self._jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
                 entry = json.loads(line)
+                if not self._include_metadata_entry(entry):
+                    continue
                 image_path = self._resolve_image_path(entry["img"])
                 if not image_path.exists():
                     print(f"Skipping missing image: {image_path}")
                     continue
                 data.append(entry)
         return data
+
+    def _include_metadata_entry(self, entry: Dict) -> bool:
+        return True
 
     def __len__(self) -> int:
         return len(self._data)
@@ -250,9 +255,11 @@ class AggregatedDataset(ImageTextJsonlDataset):
         data = super()._load_metadata()
         if self._source is None:
             return data
-        filtered = [entry for entry in data if entry.get("source") == self._source]
-        if not filtered:
+        if not data:
             raise ValueError(
                 f"No {self._source!r} records found in split file: {self._jsonl_path}"
             )
-        return filtered
+        return data
+
+    def _include_metadata_entry(self, entry: Dict) -> bool:
+        return self._source is None or entry.get("source") == self._source
