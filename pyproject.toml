@@ -43,7 +43,16 @@ extend-exclude = [
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "data: tests that read local datasets under data/",
+    "random_data: opt-in randomized local dataset sampling",
+]
+
 [dependency-groups]
 dev = [
+    "pytest>=9.0.2",
     "ruff>=0.15.6",
 ]
